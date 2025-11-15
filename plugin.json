@@ -1,0 +1,9 @@
+{
+  "name": "HellaFusion",
+  "author": "GregValiant and HellAholic",
+  "version": "1.0.0",
+  "description": "Slice a model with multiple quality profiles at different heights and combine the gcode outputs using advanced fusion technology",
+  "api": "8",
+  "supported_sdk_versions": ["8.9.0"],
+  "supported_cura_versions": ["5.10.0"]
+}
