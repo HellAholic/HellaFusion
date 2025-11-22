@@ -1397,6 +1397,35 @@ class HellaFusionLogic:
         
         return result
 
+    def _formatTransitionComment(self, label: str, x: float, y: float, z: float, e: float) -> str:
+        """Format a transition comment line with aligned columns for better readability.
+        
+        Args:
+            label: The comment label (e.g., "Previous section ended at")
+            x, y, z: Position coordinates
+            e: Extruder value
+            
+        Returns:
+            Formatted comment string with aligned columns
+            
+        Example output:
+            ;Previous section ended at:      X163.996    Y111.336     Z20.000     E428.64499
+            ;Next section starts at:         X158.874    Y123.106     Z20.100    E2058.33703
+        """
+        # Format the label with consistent width (35 characters for alignment)
+        label_str = f";{label}:"
+        formatted_line = f"{label_str:<35}"
+        
+        # Format coordinates with right-alignment
+        # X, Y, Z: 12 characters each (right-aligned)
+        # E: 15 characters (right-aligned, needs more space for large values)
+        formatted_line += f"X{x:>10.3f} "
+        formatted_line += f"Y{y:>10.3f} "
+        formatted_line += f"Z{z:>11.3f} "
+        formatted_line += f"E{e:>13.5f}"
+        
+        return formatted_line + "\n"
+
     def _generateTransitionWithG92(self, prev_section: dict, next_section: dict, calculated_transitions: list = None) -> list:
         """Generate transition code between sections.
         
@@ -1447,8 +1476,16 @@ class HellaFusionLogic:
         
         # Use unretracted E value for comment (more useful for debugging)
         prev_unretracted_e = prev_section.get('unretracted_e', end_state['e'])
-        transition.append(f";Previous section ended at: X{end_state['x']:.3f} Y{end_state['y']:.3f} Z{end_state['z']:.3f} E{prev_unretracted_e:.5f}\n")
-        transition.append(f";Next section starts at: X{start_state['x']:.3f} Y{start_state['y']:.3f} Z{start_state['z']:.3f} E{start_state['e']:.5f}\n")
+        
+        # Format transition comments with aligned columns for easy reading
+        transition.append(self._formatTransitionComment(
+            "Previous section ended at",
+            end_state['x'], end_state['y'], end_state['z'], prev_unretracted_e
+        ))
+        transition.append(self._formatTransitionComment(
+            "Next section starts at",
+            start_state['x'], start_state['y'], start_state['z'], start_state['e']
+        ))
         
         # Handle retraction state - we'll prime AFTER travel, store the state for now
         prev_retracted = prev_section['is_retracted_at_end']
