@@ -26,6 +26,7 @@ from UM.Scene.Iterator.DepthFirstIterator import DepthFirstIterator
 
 from .ProfileSwitchingService import ProfileSwitchingService
 from .HellaFusionExceptions import ProfileSwitchError
+from .TransitionCalculator import TransitionCalculator
 
 
 class HellaFusionController(QObject):
@@ -42,7 +43,7 @@ class HellaFusionController(QObject):
         super().__init__()
         self._quality_profiles = []
         self._profile_service = ProfileSwitchingService()
-        
+
         # Load quality profiles asynchronously
         self._loadQualityProfilesAsync()
     
@@ -442,31 +443,21 @@ class HellaFusionController(QObject):
             import traceback
             traceback.print_exc()
             self._logMessage("Failed to load quality profiles.", is_error=True)
-    
+
     def calculateTransitionAdjustments(self, transitions):
         """
-        UNIFIED ITERATIVE APPROACH: Calculate exact transition points and layer height adjustments
-        that the splicing logic will use. Each completed section becomes the immutable base pattern
-        for the next transition calculation.
+        Calculate exact transition points using TransitionCalculator (PHASE 2 REFACTORING).
         
-        This replaces the old dual-system approach with a single unified algorithm that:
-        1. Treats Section 1 as immutable base pattern (starts at Z=0, uses original layer heights)
-        2. For each subsequent section, finds perfect layer alignment with the previous section
-        3. Calculates exact Z-coordinates where transitions occur (may differ from user boundary)
-        4. Adjusts initial layer height of upper section for perfect gap-free transition
-        5. Each completed section becomes the base pattern for the next iteration
+        This method delegates to TransitionCalculator (single source of truth) which implements
+        the planofaction.md algorithm exactly. The 400-line inline calculation has been replaced
+        with this ~100-line wrapper that focuses on profile switching and format conversion.
         
         Args:
             transitions: List of dicts with 'section_number', 'start_height', 'end_height', 
                         'profile_id', 'intent_category', 'intent_container_id'
             
         Returns:
-            List of dicts with exact transition info for splicing logic to use:
-            - section_num, start_z, end_z: Section boundaries  
-            - layer_height, initial_layer_height: Original profile values
-            - adjusted_initial: Calculated initial layer height for perfect alignment
-            - actual_transition_z: Exact Z where transition occurs (replaces user boundary)
-            - alignment_info: Details about the alignment calculation
+            List of dicts with exact transition info (backward compatible format for Logic)
         """
         try:
             if not transitions:
@@ -486,7 +477,7 @@ class HellaFusionController(QObject):
             original_quality_changes_id = active_machine.qualityChanges.getId() if active_machine else None
             original_intent_category = machine_manager.activeIntentCategory
             
-            # Check for settings that can affect layer alignment
+            # Check for problematic settings
             support_enable = global_stack.getProperty("support_enable", "value")
             support_structure = global_stack.getProperty("support_structure", "value") if support_enable else None
             adaptive_layer_height_enabled = global_stack.getProperty("adaptive_layer_height_enabled", "value")
@@ -495,281 +486,102 @@ class HellaFusionController(QObject):
             if adaptive_layer_height_enabled:
                 self._logMessage("")
                 self._logMessage("⚠️  WARNING: Adaptive Layer Height is enabled!", is_error=True)
-                self._logMessage("   Adaptive layer height modifies layer heights dynamically.", is_error=True)
-                self._logMessage("   This may not work as expected with transition layer adjustments.", is_error=True)
+                self._logMessage("   Adaptive layers may not work correctly with transition adjustments.", is_error=True)
                 self._logMessage("")
             
             if support_enable and support_structure in ["tree", "support_tree_bp"]:
                 self._logMessage("")
                 self._logMessage("⚠️  WARNING: Tree Support is enabled!", is_error=True)
-                self._logMessage("   Tree support generation varies between slices (non-deterministic).", is_error=True)
-                self._logMessage("   This can cause floating support structures or other issues at transitions.", is_error=True)
+                self._logMessage("   Tree support can cause issues at transitions (non-deterministic).", is_error=True)
                 self._logMessage("")
             
-            sections = []
-            
-            # STEP 1: Collect original profile parameters for each section
-            self._logMessage("STEP 1: Collecting profile parameters...")
+            # Convert transitions to format expected by TransitionCalculator
+            sections_config = []
             for transition in transitions:
-                section_num = transition['section_number']
-                start_z = transition['start_height']
-                end_z = transition['end_height']
-                profile_id = transition['profile_id']
-                intent_category = transition.get('intent_category')
-                intent_container_id = transition.get('intent_container_id')
-                
-                # Switch to this section's profile to read parameters
-                if not self._switchQualityProfile(profile_id, intent_category, intent_container_id):
-                    Logger.log("e", f"Failed to switch to profile {profile_id} for section {section_num}")
-                    continue
-                
-                # Read the layer height values from the active profile
-                layer_height = global_stack.getProperty("layer_height", "value")
-                initial_layer_height = global_stack.getProperty("layer_height_0", "value")
-                
-                sections.append({
-                    'section_num': section_num,
-                    'start_z': start_z,  # User-requested boundary
-                    'end_z': end_z,     # User-requested boundary  
-                    'layer_height': float(layer_height) if layer_height else 0.2,
-                    'initial_layer_height': float(initial_layer_height) if initial_layer_height else 0.2,
-                    'adjusted_initial': None,  # Will be calculated
-                    'actual_transition_z': None,  # Exact Z where transition occurs
-                    'profile_id': profile_id,
-                    'alignment_info': {}
+                sections_config.append({
+                    'section_number': transition['section_number'],
+                    'start_height': transition['start_height'],
+                    'end_height': transition['end_height'],
+                    'profile_id': transition['profile_id'],
+                    'intent_category': transition.get('intent_category'),
+                    'intent_container_id': transition.get('intent_container_id')
                 })
             
-            # STEP 2: ITERATIVE PATTERN MATCHING - Each section becomes base for next
-            self._logMessage("STEP 2: Calculating iterative pattern-based transitions...")
+            # Create profile reader callback that switches profiles and reads parameters
+            def profile_reader(profile_id, intent_category, intent_container_id):
+                """Read profile parameters by switching to the profile."""
+                if not self._switchQualityProfile(profile_id, intent_category, intent_container_id):
+                    Logger.log("e", f"Failed to switch to profile {profile_id}")
+                    return None
+                
+                # Read parameters from active profile
+                extruders = global_stack.extruderList
+                if not extruders:
+                    return None
+                
+                return {
+                    'layer_height': float(global_stack.getProperty("layer_height", "value") or 0.2),
+                    'initial_layer_height': float(global_stack.getProperty("layer_height_0", "value") or 0.2),
+                    'retraction_enabled': bool(extruders[0].getProperty("retraction_enable", "value")),
+                    'retraction_amount': float(extruders[0].getProperty("retraction_amount", "value") or 2.0),
+                    'retraction_speed': float(extruders[0].getProperty("retraction_retract_speed", "value") or 35.0),
+                    'prime_speed': float(extruders[0].getProperty("retraction_prime_speed", "value") or 30.0),
+                    'profile_name': global_stack.quality.getName() if global_stack.quality else "Unknown"
+                }
             
-            for i, current_section in enumerate(sections):
-                section_num = current_section['section_num']
-                
-                if i == 0:
-                    # Section 1: Base pattern (immutable)
-                    current_section['adjusted_initial'] = current_section['initial_layer_height']
-                    
-                    # Calculate where Section 1 actually ends (this becomes the pattern)
-                    if current_section['end_z'] is not None:
-                        # Layer stack: initial_layer_height + N * layer_height
-                        remaining_height = current_section['end_z'] - current_section['initial_layer_height']
-                        num_regular_layers = max(0, int(remaining_height / current_section['layer_height']))
-                        pattern_end_z = current_section['initial_layer_height'] + (num_regular_layers * current_section['layer_height'])
-                        
-                        # The actual transition Z is where the pattern ACTUALLY ends, not the user boundary
-                        current_section['actual_transition_z'] = pattern_end_z
-                        
-                        current_section['alignment_info'] = {
-                            'pattern_end_z': pattern_end_z,
-                            'num_regular_layers': num_regular_layers,
-                            'is_base_pattern': True
-                        }
-                        
-                        self._logMessage(f"Section {section_num}: BASE PATTERN (immutable)")
-                        self._logMessage(f"  Z=0mm to {pattern_end_z:.3f}mm (user boundary: {current_section['end_z']:.1f}mm)")
-                        self._logMessage(f"  initial={current_section['initial_layer_height']:.3f}mm + {num_regular_layers} × {current_section['layer_height']:.3f}mm layers")
-                    else:
-                        # Last section has no end boundary - no actual transition Z to set
-                        current_section['actual_transition_z'] = None
-                        current_section['alignment_info'] = {'is_base_pattern': True, 'is_last_section': True}
-                        self._logMessage(f"Section {section_num}: BASE PATTERN to model end")
-                
-                else:
-                    # Section 2+: Match pattern from previous section
-                    prev_section = sections[i-1]
-                    user_boundary = current_section['start_z']  # User-requested transition height
-                    
-                    # FIND CLOSEST LAYER TO USER BOUNDARY:
-                    # The user boundary is just a guide. We need to find the actual layer
-                    # in the previous section that's closest to this boundary (within ±1 layer height tolerance)
-                    
-                    original_initial = current_section['initial_layer_height']
-                    current_layer_height = current_section['layer_height']
-                    
-                    # Get the actual end Z from the previous section (ITERATIVE ALGORITHM)
-                    if prev_section.get('actual_transition_z') is not None:
-                        # Previous section already processed - use its actual transition Z
-                        closest_layer_z = prev_section['actual_transition_z']
-                        self._logMessage(f"Section {section_num}: Using previous section's actual transition Z={closest_layer_z:.6f}mm")
-                    elif 'pattern_end_z' in prev_section['alignment_info']:
-                        # First section - use its calculated pattern end
-                        closest_layer_z = prev_section['alignment_info']['pattern_end_z']
-                        self._logMessage(f"Section {section_num}: Using first section's pattern end Z={closest_layer_z:.6f}mm")
-                    else:
-                        # Need to find the closest layer in previous section to user boundary
-                        prev_initial = prev_section['initial_layer_height']
-                        prev_layer_height = prev_section['layer_height']
-                        prev_start_z = prev_section['start_z']
-                        
-                        # Generate all possible layer boundaries in previous section
-                        layer_boundaries = []
-                        current_z = prev_start_z + prev_initial  # First layer end
-                        layer_num = 1
-                        
-                        # Generate layers until we're well past the user boundary
-                        while current_z <= user_boundary + prev_layer_height:
-                            layer_boundaries.append((layer_num, current_z))
-                            current_z += prev_layer_height
-                            layer_num += 1
-                        
-                        # Find the layer boundary closest to user boundary within tolerance
-                        tolerance = prev_layer_height  # ±1 layer height tolerance
-                        valid_boundaries = [
-                            (layer_num, z) for layer_num, z in layer_boundaries 
-                            if abs(z - user_boundary) <= tolerance
-                        ]
-                        
-                        if valid_boundaries:
-                            # Choose the closest boundary
-                            closest_boundary = min(valid_boundaries, key=lambda x: abs(x[1] - user_boundary))
-                            closest_layer_z = closest_boundary[1]
-                            closest_layer_num = closest_boundary[0]
-                            
-                            self._logMessage(f"Section {section_num}: Found closest layer {closest_layer_num} at Z={closest_layer_z:.6f}mm")
-                            self._logMessage(f"  User boundary: Z={user_boundary:.3f}mm, difference: {closest_layer_z - user_boundary:+.6f}mm")
-                        else:
-                            # Fallback: use the layer end closest to user boundary
-                            closest_boundary = min(layer_boundaries, key=lambda x: abs(x[1] - user_boundary))
-                            closest_layer_z = closest_boundary[1]
-                            closest_layer_num = closest_boundary[0]
-                            
-                            self._logMessage(f"Section {section_num}: No layers within tolerance, using closest layer {closest_layer_num} at Z={closest_layer_z:.6f}mm", is_error=True)
-                    
-                    # This becomes our actual transition point
-                    actual_prev_end_z = closest_layer_z
-                    
-                    # MODULO CALCULATION FOR TRIMMED SECTIONS:
-                    # The layer_height_0 (initial layer height) only affects the build plate layer.
-                    # Since Section 2+ are trimmed, we need to calculate what layer_height_0 value
-                    # will produce the correct layer pattern at the user_boundary (trim point).
-                    #
-                    # We want the first layer after trimming to align with where the previous section ended.
-                    # Formula: layer_height_0 = (ending_z_of_previous_section) % (current_layer_height)
-                    
-                    calculated_initial = actual_prev_end_z % current_layer_height
-                    
-                    # Handle floating point precision issues by rounding to 6 decimal places
-                    calculated_initial = round(calculated_initial, 6)
-                    
-                    # Handle edge case where modulo gives very small value (essentially 0)
-                    if calculated_initial < 0.001:
-                        calculated_initial = current_layer_height
-                    
-                    # Validate the calculated initial layer height is reasonable
-                    if calculated_initial > 0 and calculated_initial <= current_layer_height:
-                        current_section['adjusted_initial'] = calculated_initial
-                        alignment_type = 'modulo_match'
-                        gap = 0.0  # Perfect match by design
-                        deviation = abs(calculated_initial - original_initial)
-                        
-                        self._logMessage(f"Section {section_num}: MODULO MATCH -> Previous section ended at Z={actual_prev_end_z:.6f}mm")
-                        self._logMessage(f"  Calculated initial: {actual_prev_end_z:.6f} % {current_layer_height:.3f} = {calculated_initial:.6f}mm")
-                    else:
-                        # Fallback to original if calculation produces invalid result
-                        current_section['adjusted_initial'] = original_initial
-                        alignment_type = 'fallback_invalid_modulo'
-                        gap = abs(actual_prev_end_z - user_boundary)
-                        deviation = 0.0
-                        
-                        self._logMessage(f"Section {section_num}: Invalid modulo result ({calculated_initial:.6f}mm), using original", is_error=True)
-                        
-                    # Calculate where THIS section will end (becomes pattern for next section)
-                    if current_section['end_z'] is not None:
-                        # ITERATIVE BOUNDARY ADJUSTMENT: Calculate layer pattern and find actual transition
-                        # within ±1 layer tolerance of user boundary
-                        
-                        user_end_boundary = current_section['end_z']
-                        
-                        # Generate all possible layer ends for this section
-                        # NOTE: adjusted_initial is only a profile parameter - actual layers use layer_height
-                        layer_boundaries = []
-                        current_z = actual_prev_end_z + current_section['layer_height']  # First layer end
-                        layer_num = 1
-                        
-                        # Generate layers until we're well past the user boundary
-                        while current_z <= user_end_boundary + current_section['layer_height']:
-                            # Round to avoid floating point precision issues
-                            layer_boundaries.append((layer_num, round(current_z, 6)))
-                            current_z += current_section['layer_height']
-                            layer_num += 1
-                        
-                        # Find the natural end of the pattern within user boundary region
-                        # The user boundary is a guideline - validate if natural pattern fits within tolerance
-                        tolerance = current_section['layer_height']
-                        
-                        # Find the last layer that is <= user_end_boundary + tolerance
-                        valid_boundaries = [
-                            (layer_num, z) for layer_num, z in layer_boundaries 
-                            if z <= user_end_boundary + tolerance
-                        ]
-                        
-                        if valid_boundaries:
-                            # Use the natural end of the pattern (last valid layer)
-                            closest_end_boundary = valid_boundaries[-1]  # Last layer within boundary + tolerance
-                            this_pattern_end_z = closest_end_boundary[1]
-                            closest_end_layer_num = closest_end_boundary[0]
-                            
-                            # Validate it's within tolerance of user boundary
-                            difference = this_pattern_end_z - user_end_boundary
-                            if abs(difference) <= tolerance:
-                                self._logMessage(f"  Section {section_num} ends at layer {closest_end_layer_num}, Z={this_pattern_end_z:.6f}mm")
-                                self._logMessage(f"  User end boundary: Z={user_end_boundary:.1f}mm, difference: {difference:+.6f}mm (within tolerance)")
-                            else:
-                                self._logMessage(f"  Section {section_num} ends at layer {closest_end_layer_num}, Z={this_pattern_end_z:.6f}mm")
-                                self._logMessage(f"  User end boundary: Z={user_end_boundary:.1f}mm, difference: {difference:+.6f}mm (WARNING: outside tolerance)", is_error=True)
-                        else:
-                            # Fallback: pattern doesn't reach user boundary region
-                            if layer_boundaries:
-                                closest_end_boundary = layer_boundaries[-1]
-                                this_pattern_end_z = closest_end_boundary[1]
-                                closest_end_layer_num = closest_end_boundary[0]
-                                
-                                self._logMessage(f"  Section {section_num}: Pattern ends before user boundary at layer {closest_end_layer_num}, Z={this_pattern_end_z:.6f}mm", is_error=True)
-                                self._logMessage(f"  User end boundary: Z={user_end_boundary:.1f}mm, pattern falls short by {user_end_boundary - this_pattern_end_z:.6f}mm", is_error=True)
-                            else:
-                                self._logMessage(f"  Section {section_num}: No valid layer boundaries generated", is_error=True)
-                                this_pattern_end_z = user_end_boundary
-                                closest_end_layer_num = 0
-                        
-                        # Calculate the number of regular layers in this section
-                        section_height = this_pattern_end_z - actual_prev_end_z
-                        num_regular_layers = max(0, int((section_height - current_section['adjusted_initial']) / current_section['layer_height']))
-                        
-                        # Set actual_transition_z to where THIS section actually ends (for next section to use)
-                        current_section['actual_transition_z'] = this_pattern_end_z
-                        
-                        current_section['alignment_info'] = {
-                            'pattern_end_z': this_pattern_end_z,
-                            'num_regular_layers': num_regular_layers,
-                            'base_pattern_end_z': actual_prev_end_z,
-                            'alignment_type': alignment_type,
-                            'gap_with_base': gap,
-                            'initial_deviation': deviation
-                        }
-                    else:
-                        # Last section - no end boundary, so no specific actual_transition_z
-                        current_section['actual_transition_z'] = None
-                        current_section['alignment_info'] = {
-                            'base_pattern_end_z': actual_prev_end_z,
-                            'alignment_type': alignment_type,
-                            'gap_with_base': gap,
-                            'initial_deviation': deviation,
-                            'is_last_section': True
-                        }
-                    
-                    # Logging
-                    if current_section['end_z'] is not None:
-                        self._logMessage(f"Section {section_num}: PATTERN MATCH -> Section {i}")
-                        self._logMessage(f"  Actual transition: Z={actual_prev_end_z:.6f}mm to {this_pattern_end_z:.6f}mm")
-                        self._logMessage(f"  User requested: Z={user_boundary:.1f}mm to {current_section['end_z']:.1f}mm")
-                    else:
-                        self._logMessage(f"Section {section_num}: PATTERN MATCH -> Section {i} (to end)")
-                        self._logMessage(f"  Actual transition: Z={actual_prev_end_z:.6f}mm to model end")
-                        self._logMessage(f"  User requested: Z={user_boundary:.1f}mm to model end")
-                    
-                    if alignment_type != 'no_adjustment_needed':
-                        self._logMessage(f"  initial={original_initial:.3f}mm -> {current_section['adjusted_initial']:.6f}mm ({alignment_type}, Δ={current_section['adjusted_initial']-original_initial:+.6f}mm)")
-                        self._logMessage(f"  previous section ended at {actual_prev_end_z:.6f}mm, gap={gap:.3f}mm")
+            # ═══════════════════════════════════════════════════════════════════════════
+            # PHASE 2: USE TRANSITIONCALCULATOR - Single Source of Truth
+            # ═══════════════════════════════════════════════════════════════════════════
+            self._logMessage("═" * 80)
+            self._logMessage("USING TRANSITIONCALCULATOR ")
+            self._logMessage("═" * 80)
+            
+            calculator = TransitionCalculator()
+            transition_data_list = calculator.calculate_all_transitions(sections_config, profile_reader)
+            
+            # Log calculation results
+            for td in transition_data_list:
+                self._logMessage("")
+                self._logMessage(td.get_summary())
+            
+            self._logMessage("")
+            
+            # Check for validation errors
+            if calculator.has_errors():
+                self._logMessage("═" * 80)
+                self._logMessage("⚠️  VALIDATION ERRORS DETECTED:", is_error=True)
+                self._logMessage("═" * 80)
+                for error in calculator.get_validation_errors():
+                    self._logMessage(f"  • {error}", is_error=True)
+                self._logMessage("")
+            else:
+                self._logMessage("✅ All transition validations passed!")
+            
+            self._logMessage("═" * 80)
+            
+            # Convert TransitionData objects to backward-compatible dict format for Logic
+            # This maintains compatibility with existing HellaFusionLogic.combineGcodeFiles()
+            sections = []
+            for td in transition_data_list:
+                section_dict = {
+                    'section_num': td.section_num,
+                    'start_z': td.user_start_z,
+                    'end_z': td.user_end_z,
+                    'layer_height': td.layer_height,
+                    'initial_layer_height': td.original_initial_layer_height,
+                    'adjusted_initial': td.adjusted_initial_layer_height,
+                    'actual_transition_z': td.actual_end_z,
+                    'profile_id': td.profile_id,
+                    'alignment_info': {
+                        'pattern_end_z': td.actual_end_z,
+                        'alignment_type': td.alignment_type,
+                        'is_base_pattern': td.is_first_section,
+                        'is_last_section': td.is_last_section
+                    },
+                    # Store TransitionData object for Phase 3 (when Logic is refactored)
+                    '_transition_data': td
+                }
+                sections.append(section_dict)
             
             # Restore original profile
             if original_quality_changes_id and original_quality_changes_id.lower() not in ["empty", "not_supported", "none"]:
@@ -785,7 +597,7 @@ class HellaFusionController(QObject):
             traceback.print_exc()
             self._logMessage(f"Failed to calculate adjustments: {e}", is_error=True)
             return []
-    
+
     def _switchQualityProfile(self, profile_id: str, intent_category: str = None, intent_container_id: str = None) -> bool:
         """Switch to the specified quality profile using the centralized service."""
         try:

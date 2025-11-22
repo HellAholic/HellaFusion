@@ -15,17 +15,13 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 import re
+
 from UM.Logger import Logger
 from cura.CuraApplication import CuraApplication
 
-# Handle both relative and absolute imports for testing
-try:
-    from .HellaFusionExceptions import FileProcessingError, ValidationError
-    from .PluginConstants import PluginConstants
-except ImportError:
-    # Fallback for direct execution/testing
-    from HellaFusionExceptions import FileProcessingError, ValidationError
-    from PluginConstants import PluginConstants
+from .HellaFusionExceptions import FileProcessingError
+from .PluginConstants import PluginConstants
+from .TransitionData import TransitionData
 
 
 class HellaFusionLogic:
@@ -102,18 +98,144 @@ class HellaFusionLogic:
             
         return settings
     
+    def validateTransitions(self, calculated_transitions: list, model_height: float = None) -> dict:
+        """Pre-flight validation of transitions before slicing.
+        
+        Validates:
+        - All sections have TransitionData objects
+        - Transitions are within model bounds (if model_height provided)
+        - No gaps or overlaps between sections
+        - Profile compatibility (layer heights are reasonable)
+        
+        Args:
+            calculated_transitions: List of dicts with '_transition_data' from TransitionCalculator
+            model_height: Optional model height for bounds checking
+            
+        Returns:
+            dict with 'valid': bool, 'errors': list, 'warnings': list
+        """
+        result = {
+            'valid': True,
+            'errors': [],
+            'warnings': []
+        }
+        
+        try:
+            if not calculated_transitions or len(calculated_transitions) == 0:
+                result['valid'] = False
+                result['errors'].append("No transitions provided")
+                return result
+            
+            # Extract TransitionData objects
+            transition_data_list = []
+            for i, section_dict in enumerate(calculated_transitions):
+                td = section_dict.get('_transition_data')
+                if td is None:
+                    result['valid'] = False
+                    result['errors'].append(f"Section {i}: Missing TransitionData object")
+                    continue
+                if not isinstance(td, TransitionData):
+                    result['valid'] = False
+                    result['errors'].append(f"Section {i}: Invalid TransitionData type (got {type(td)})")
+                    continue
+                transition_data_list.append(td)
+            
+            if not transition_data_list:
+                result['valid'] = False
+                result['errors'].append("No valid TransitionData objects found")
+                return result
+            
+            # Validate continuity between sections
+            for i in range(len(transition_data_list) - 1):
+                current_td = transition_data_list[i]
+                next_td = transition_data_list[i + 1]
+                
+                # Check for gaps
+                if current_td.actual_end_z is not None:
+                    gap = next_td.actual_start_z - current_td.actual_end_z
+                    if abs(gap) > 0.01:  # Allow 0.01mm tolerance
+                        if gap > 0:
+                            result['warnings'].append(
+                                f"Section {i}→{i+1}: Gap of {gap:.3f}mm detected "
+                                f"(Section {i} ends at {current_td.actual_end_z:.3f}mm, "
+                                f"Section {i+1} starts at {next_td.actual_start_z:.3f}mm)"
+                            )
+                        else:
+                            result['warnings'].append(
+                                f"Section {i}→{i+1}: Overlap of {abs(gap):.3f}mm detected "
+                                f"(Section {i} ends at {current_td.actual_end_z:.3f}mm, "
+                                f"Section {i+1} starts at {next_td.actual_start_z:.3f}mm)"
+                            )
+            
+            # Validate against model height if provided
+            if model_height is not None and model_height > 0:
+                last_td = transition_data_list[-1]
+                if last_td.actual_end_z is not None and last_td.actual_end_z > model_height:
+                    result['warnings'].append(
+                        f"Last section ends at {last_td.actual_end_z:.3f}mm but model height is {model_height:.3f}mm"
+                    )
+                
+                # Check if first section starts at 0
+                first_td = transition_data_list[0]
+                if first_td.actual_start_z > 0.01:  # Allow small tolerance
+                    result['warnings'].append(
+                        f"First section starts at {first_td.actual_start_z:.3f}mm instead of 0mm"
+                    )
+            
+            # Validate layer heights are reasonable
+            for i, td in enumerate(transition_data_list):
+                if td.layer_height < 0.05 or td.layer_height > 0.5:
+                    result['warnings'].append(
+                        f"Section {i}: Unusual layer height {td.layer_height:.3f}mm "
+                        f"(profile: {td.profile_name})"
+                    )
+            
+        except Exception as e:
+            result['valid'] = False
+            result['errors'].append(f"Validation exception: {str(e)}")
+        
+        return result
+    
     def combineGcodeFiles(self, sections_data: list, output_path: str, calculated_transitions: list = None) -> bool:
-        """Combine multiple gcode files into a single spliced file using UNIFIED approach.
+        """Combine multiple gcode files into a single spliced file using TransitionData (PHASE 3).
+        
+        PHASE 3 REFACTORING: This method now REQUIRES TransitionData objects from TransitionCalculator.
+        No more searching for alignment points or fallback logic - TransitionCalculator is the
+        single source of truth for all transition boundaries.
         
         Args:
             sections_data: List of dicts with 'section_number', 'gcode_file', 'start_height', 'end_height'
             output_path: Path where the combined gcode will be saved
-            calculated_transitions: Pre-calculated transition data from controller (UNIFIED approach)
+            calculated_transitions: REQUIRED - List of dicts from Controller containing '_transition_data' 
+                                   (TransitionData objects from TransitionCalculator)
             
         Returns:
             True if successful, False otherwise
+            
+        Raises:
+            ValueError: If calculated_transitions is missing or doesn't contain TransitionData objects
         """
         try:
+            # Pre-flight validation
+            if calculated_transitions:
+                validation_result = self.validateTransitions(calculated_transitions)
+                
+                # Log warnings
+                for warning in validation_result['warnings']:
+                    Logger.log("w", f"Validation Warning: {warning}")
+                
+                # Fail on errors
+                if not validation_result['valid']:
+                    for error in validation_result['errors']:
+                        Logger.log("e", f"Validation Error: {error}")
+                    Logger.log("e", "Pre-flight validation failed. Cannot proceed with splicing.")
+                    return False
+                
+                if validation_result['warnings']:
+                    Logger.log("i", f"Pre-flight validation passed with {len(validation_result['warnings'])} warning(s)")
+                else:
+                    Logger.log("i", "Pre-flight validation passed successfully")
+            
             # Read all gcode files
             sections = []
             skipped_sections = []
@@ -121,7 +243,8 @@ class HellaFusionLogic:
             for section_info in sections_data:
                 gcode_lines = self._readGcodeFile(section_info['gcode_file'])
                 if not gcode_lines:
-                    Logger.log("e", f"Failed to read gcode file: {section_info['gcode_file']}")
+                    Logger.log("e", f"Cannot read G-code file for section {section_info['section_number']}: {section_info['gcode_file']}")
+                    Logger.log("e", "Please ensure the slicing process completed successfully and the file exists.")
                     return False
                 
                 # Extract section data
@@ -131,16 +254,20 @@ class HellaFusionLogic:
                     section_info['start_height'],
                     section_info['end_height'],
                     section_info.get('layer_height', 0.2),  # Use layer_height from Cura profile
-                    section_info.get('profile_retraction_settings')  # Pass retraction settings from profile
+                    section_info.get('profile_retraction_settings'),  # Pass retraction settings from profile
+                    section_info.get('adjusted_initial'),  # Pass adjusted initial layer height (for trimming)
+                    section_info.get('original_initial')  # Pass original initial layer height
                 )
                 
                 if not section_data:
-                    Logger.log("e", f"Failed to extract section data for section {section_info['section_number']}")
+                    Logger.log("e", f"Failed to process section {section_info['section_number']}")
+                    Logger.log("e", "This may indicate a problem with the G-code format or slicing settings.")
                     return False
                 
                 # Check if section has valid gcode (not empty, has actual print moves)
                 if not section_data['gcode_lines'] or len(section_data['gcode_lines']) < 5:
-                    Logger.log("w", f"Section {section_info['section_number']} has no gcode content (transition height {section_info['start_height']}mm may exceed model height). Skipping this section.")
+                    Logger.log("w", f"Section {section_info['section_number']} is empty - transition height {section_info['start_height']:.2f}mm may exceed model height.")
+                    Logger.log("w", "Consider reducing the number of sections or adjusting transition heights.")
                     skipped_sections.append(section_info['section_number'])
                     continue
                 
@@ -148,11 +275,12 @@ class HellaFusionLogic:
             
             # Check if we have any valid sections
             if not sections:
-                Logger.log("e", "No valid sections found - all transition heights may exceed model height")
+                Logger.log("e", "No valid sections found for splicing.")
+                Logger.log("e", "All transition heights exceed the model height. Please reduce the number of sections or adjust transition heights.")
                 return False
             
             if skipped_sections:
-                Logger.log("i", f"Skipped sections: {skipped_sections} (transition heights exceed model height)")
+                Logger.log("i", f"Skipped empty section(s): {skipped_sections} (transition heights exceed model height)")
             
             # Pass first gcode file for header extraction
             first_gcode_file = sections_data[0]['gcode_file'] if sections_data else None
@@ -161,7 +289,8 @@ class HellaFusionLogic:
             combined_gcode = self._combineSections(sections, first_gcode_file, calculated_transitions)
             
             if not combined_gcode:
-                Logger.log("e", "Failed to combine sections")
+                Logger.log("e", "Failed to combine sections into spliced G-code.")
+                Logger.log("e", "This may indicate an issue with transition calculations or G-code processing.")
                 return False
             
             # Write output file
@@ -176,7 +305,7 @@ class HellaFusionLogic:
         except FileProcessingError:
             raise  # Re-raise custom exceptions
         except Exception as e:
-            Logger.logException("e", f"Error combining gcode files: {str(e)}")
+            Logger.log("e", f"Error combining gcode files: {str(e)}")
             raise FileProcessingError(f"Failed to combine gcode files: {str(e)}", operation="combining gcode")
     
     def _readGcodeFile(self, file_path: str) -> list:
@@ -186,10 +315,10 @@ class HellaFusionLogic:
                 lines = f.readlines()
             return lines
         except Exception as e:
-            Logger.logException("e", f"Error reading gcode file {file_path}: {str(e)}")
+            Logger.log("e", f"Error reading gcode file {file_path}: {str(e)}")
             return []
     
-    def _extractSectionData(self, gcode_lines: list, section_number: int, start_height: float, end_height: float, layer_height: float = 0.2, retraction_settings: dict = None) -> dict:
+    def _extractSectionData(self, gcode_lines: list, section_number: int, start_height: float, end_height: float, layer_height: float = 0.2, retraction_settings: dict = None, adjusted_initial: float = None, original_initial: float = None) -> dict:
         """Extract section data from a specific Z height range.
         
         Each temp file contains the FULL model sliced with one profile.
@@ -236,6 +365,7 @@ class HellaFusionLogic:
                 'start_position': {'x': 0, 'y': 0, 'z': 0, 'e': 0},
                 'end_position': {'x': 0, 'y': 0, 'z': 0, 'e': 0},
                 'layer_height': layer_height,  # Use layer_height from Cura profile
+                'initial_layer_height': adjusted_initial if adjusted_initial is not None else (original_initial if original_initial is not None else layer_height),  # Temp file was sliced with this adjusted value
                 'is_retracted_at_start': retraction_enabled,  # Retracted at start if profile has retraction enabled
                 'is_retracted_at_end': retraction_enabled,    # Retracted at end if profile has retraction enabled
                 'profile_retraction_settings': retraction_settings
@@ -342,30 +472,20 @@ class HellaFusionLogic:
                             is_retracted = False
                         current_e = e_val
                 
-                # SMART LAYER ALIGNMENT: Extract ±5mm around boundary for alignment
-                # This gives the alignment algorithm enough layers to find optimal transitions
+                # PHASE 3 FIX: Extract ENTIRE temp file, don't pre-trim!
+                # The temp file contains the full model sliced with one profile.
+                # We'll trim to exact boundaries later in _trimSectionToZ using TransitionData.
+                # Double-trimming was causing empty sections because pre-trimming removed
+                # the layers that _trimSectionToZ was looking for.
                 
-                # Start section extraction at boundary - 5mm (or from beginning for section 1)
-                search_range_mm = 5.0
-                extraction_start = max(0, start_height - search_range_mm)  # Don't go below Z=0
-                
-                start_condition = (current_layer_z >= extraction_start)
-                if not in_section and past_startup and ';LAYER:' in line_stripped and start_condition:
+                # Start extraction after startup (after first ;LAYER: marker)
+                if not in_section and past_startup and ';LAYER:' in line_stripped:
                     in_section = True
                     section_data['start_position'] = {
                         'x': current_x, 'y': current_y, 'z': current_layer_z, 'e': current_e
                     }
                     # Retraction state now determined from profile settings, not G-code analysis
                     # section_data['is_retracted_at_start'] = is_retracted
-                
-                # End section when we see a layer beyond reasonable range of boundary
-                # Extract generously - we'll trim to exact alignment during combination
-                if in_section and end_height is not None and ';LAYER:' in line_stripped:
-                    # Extract layers up to 2x layer_height beyond boundary to have options for alignment
-                    layer_height = section_data.get('layer_height', 0.2)
-                    max_z = end_height + (layer_height * 2)
-                    if current_layer_z > max_z:
-                        break
                 
                 # Collect lines while in section
                 if in_section:
@@ -385,45 +505,76 @@ class HellaFusionLogic:
             return section_data
             
         except Exception as e:
-            Logger.logException("e", f"Error extracting section data: {str(e)}")
+            Logger.log("e", f"Error extracting section data: {str(e)}")
             return None
     
-    def _trimSectionToZ(self, section: dict, min_z: float = None, max_z: float = None) -> dict:
+    def _trimSectionToZ(self, section: dict, min_z: float = None, max_z: float = None, transition_data: TransitionData = None) -> dict:
         """Trim section to only include layers within Z range [min_z, max_z].
         
-        For sections 2+, this method:
-        1. Finds the reference layer (at boundary Z) and extracts final XYE values
-        2. Removes the reference layer from output (it should not print)
-        3. Keeps only layers that should actually print
+        CRITICAL: The temp G-code file was sliced with the ADJUSTED initial layer height calculated
+        by TransitionCalculator. We MUST use TransitionData's adjusted_initial_layer_height and 
+        layer_height to calculate which layer numbers exist in THIS section's temp file.
         
-        Layers are identified by their printing height (minimum Z in layer, ignoring Z-hops).
+        Per plan of action: "Calculate start layer number and end layer number of each section 
+        based on the transition heights of that section, its initial layer height that has been 
+        calculated and its layer height."
         
         Args:
-            section: Section data dict
-            min_z: Minimum layer Z to include (None = no minimum)
-            max_z: Maximum layer Z to include (None = no maximum)
+            section: Section data dict with gcode_lines
+            min_z: Minimum layer Z to include (actual_start_z from TransitionData)
+            max_z: Maximum layer Z to include (actual_end_z from TransitionData)
+            transition_data: TransitionData object containing adjusted_initial_layer_height and layer_height
         
         Returns new section dict with trimmed gcode_lines and updated positions.
         """
-
+        
+        # Use TransitionData values if provided (preferred), fallback to section data
+        if transition_data:
+            layer_height = transition_data.layer_height
+            initial_layer_height = transition_data.adjusted_initial_layer_height
+        else:
+            # Fallback for backward compatibility
+            layer_height = section.get('layer_height', 0.2)
+            initial_layer_height = section.get('initial_layer_height', layer_height)
+        
+        # Calculate which LAYER NUMBERS to include based on global Z boundaries
+        # CRITICAL: Use adjusted initial layer height because that's what the temp file was sliced with!
+        # TransitionCalculator calculated this adjusted value for perfect modulo alignment.
+        # Formula: layer_num = (z - initial_layer_height) / layer_height
+        # This gives us the ;LAYER:N marker number to look for in the temp G-code file
+        start_layer_num = 0
+        end_layer_num = None  # None means no limit
+        
+        if max_z is not None:
+            # Use round() to handle floating-point precision
+            end_layer_num = round((max_z - initial_layer_height) / layer_height)
+        
+        if min_z is not None:
+            # Calculate which layer is AT the transition Z
+            # Use round() instead of int() to handle floating-point precision
+            transition_layer = round((min_z - initial_layer_height) / layer_height)
+            start_layer_num = transition_layer + 1
+        
         trimmed_lines = []
         in_valid_layer = False
         startup_done = False
-        current_layer_z = None
-        min_z_in_current_layer = None
-        pending_layer_marker = None  # Buffer layer marker until we know if layer is valid
+        pending_layer_marker = None
+        current_layer_num = -1  # Track current layer number
+        
+        # Track reference layer (the layer BEFORE start_layer_num for XYE extraction)
+        reference_layer_num = None
+        reference_layer_lines = []
+        in_reference_layer = False
+        reference_x_was_extracted = False  # Track if we successfully extracted X from reference layer
+        reference_y_was_extracted = False  # Track if we successfully extracted Y from reference layer
+        reference_e_was_extracted = False  # Track if we successfully extracted E from reference layer
+        if min_z is not None and start_layer_num > 0:
+            # The layer before start_layer_num should be extracted for XYE continuity
+            reference_layer_num = start_layer_num - 1
         
         # For section 1 (min_z = None), include startup
         # For sections 2+ (min_z set), skip startup entirely
         include_startup = (min_z is None)
-        
-        first_layer_seen = False  # Track if we've seen the first layer
-        
-        # Track reference layer data (for extracting XYE values before excluding it)
-        reference_layer_z = min_z  # The boundary Z where reference layer prints
-        reference_layer_lines = []  # Store reference layer lines for extraction
-        in_reference_layer = False
-        reference_layer_extracted = False
         
         for line in section['gcode_lines']:
             line_stripped = line.strip()
@@ -432,82 +583,67 @@ class HellaFusionLogic:
             if not startup_done:
                 if ';LAYER:' in line_stripped:
                     startup_done = True
-                    first_layer_seen = True
-                    pending_layer_marker = line  # Buffer this layer marker
-                    # For section 1 (min_z = None), first layer is automatically valid
-                    if min_z is None:
-                        in_valid_layer = True
-                    # For other sections, wait for Z tracking to determine validity
+                    # CRITICAL FIX: Parse actual layer number from ;LAYER:N marker
+                    layer_match = re.search(r';LAYER:(\d+)', line_stripped)
+                    if layer_match:
+                        current_layer_num = int(layer_match.group(1))
+                    else:
+                        current_layer_num = 0  # Fallback
+                    pending_layer_marker = line
+                    
+                    # Determine if this layer should be included
+                    in_valid_layer = (current_layer_num >= start_layer_num and 
+                                     (end_layer_num is None or current_layer_num <= end_layer_num))
+                    
+                    # Check if this is the reference layer
+                    if reference_layer_num is not None and current_layer_num == reference_layer_num:
+                        in_reference_layer = True
+                        in_valid_layer = False  # Don't include, only extract
                 elif include_startup:
                     trimmed_lines.append(line)
                 continue
             
             # New layer marker
             if ';LAYER:' in line_stripped:
-                # First, process any pending reference layer
+                # Process any pending reference layer
                 if in_reference_layer and reference_layer_lines:
-                    # Extract reference values from the layer we're about to exclude
-                    self._extractReferenceFromLayer(section, reference_layer_lines, reference_layer_z)
-                    reference_layer_extracted = True
-                    # Don't add reference layer to output - it should be excluded
+                    extracted = self._extractReferenceFromLayer(section, reference_layer_lines, None)
+                    if extracted['x'] is not None:
+                        reference_x_was_extracted = True
+                    if extracted['y'] is not None:
+                        reference_y_was_extracted = True
+                    if extracted['e'] is not None:
+                        reference_e_was_extracted = True
                     reference_layer_lines = []
                     in_reference_layer = False
                 
-                # Check if previous pending layer should be included
+                # Add previous pending layer if it was valid
                 if pending_layer_marker and in_valid_layer:
                     trimmed_lines.append(pending_layer_marker)
                 
-                # Determine current layer's Z from previous tracking
-                if min_z_in_current_layer is not None:
-                    current_layer_z = min_z_in_current_layer
-                
-                # Reset for new layer
-                min_z_in_current_layer = None
-                pending_layer_marker = line  # Buffer this new layer marker
-                first_layer_seen = False
-                
-                # Check if this is the reference layer (should be extracted but not included)
-                if (current_layer_z is not None and reference_layer_z is not None and 
-                    abs(current_layer_z - reference_layer_z) < 0.001):
-                    in_reference_layer = True
-                    in_valid_layer = False  # Don't include in output
+                # CRITICAL FIX: Parse actual layer number from ;LAYER:N marker, don't just increment
+                layer_match = re.search(r';LAYER:(\d+)', line_stripped)
+                if layer_match:
+                    current_layer_num = int(layer_match.group(1))
                 else:
-                    # Check if this layer is in the valid range to include
-                    if current_layer_z is not None:
-                        in_valid_layer = True
-                        if min_z is not None and current_layer_z < min_z:
-                            in_valid_layer = False
-                        if max_z is not None and current_layer_z > max_z:
-                            in_valid_layer = False
-                            break  # Stop, we're past the max
-                    else:
-                        # First layer for section 1
-                        in_valid_layer = (min_z is None)
+                    current_layer_num += 1  # Fallback: increment if parsing fails
+                pending_layer_marker = line
+                
+                # Determine if this NEW layer should be included
+                in_valid_layer = (current_layer_num >= start_layer_num and 
+                                 (end_layer_num is None or current_layer_num <= end_layer_num))
+                
+                # Check if this is the reference layer
+                if reference_layer_num is not None and current_layer_num == reference_layer_num:
+                    in_reference_layer = True
+                    in_valid_layer = False  # Don't include, only extract                
+
+                # Check if we've passed the end boundary
+                if end_layer_num is not None and current_layer_num > end_layer_num:
+                    # We're past the end, stop processing
+                    break
                 
                 continue
-            
-            # Track Z moves to find layer height
-            match = re.search(r' Z(\d+\.?\d*)', line_stripped)
-            if match:
-                z = float(match.group(1))
-                if min_z_in_current_layer is None or z < min_z_in_current_layer:
-                    min_z_in_current_layer = z
-                
-                # Once we see the first Z move in the first layer, we can determine if it's valid
-                if first_layer_seen and current_layer_z is None:
-                    current_layer_z = z
-                    # Check if this is the reference layer
-                    if (reference_layer_z is not None and abs(z - reference_layer_z) < 0.001):
-                        in_reference_layer = True
-                        in_valid_layer = False
-                    else:
-                        # Check if first layer is in range
-                        in_valid_layer = True
-                        if min_z is not None and z < min_z:
-                            in_valid_layer = False
-                        if max_z is not None and z > max_z:
-                            in_valid_layer = False
-                    first_layer_seen = False  # Don't check again
             
             # Store reference layer lines for extraction
             if in_reference_layer:
@@ -541,24 +677,78 @@ class HellaFusionLogic:
             trimmed_section['end_position']['z'] = max_z
         if min_z is not None:
             trimmed_section['start_position']['z'] = min_z
+
+        # Scan for actual XYE positions at START boundary
+        # Only update values that were NOT extracted from reference layer
+        # Reference layer values (from previous layer) are what we need for proper transition
+        if min_z is not None:
+            for line in trimmed_lines:
+                line_stripped = line.strip()
+                if line_stripped.startswith(('G0', 'G1')):
+                    match_x = re.search(r' X(\d+\.?\d*)', line_stripped)
+                    match_y = re.search(r' Y(\d+\.?\d*)', line_stripped)
+                    match_e = re.search(r' E(-?\d+\.?\d*)', line_stripped)
+                    
+                    if match_x and not reference_x_was_extracted:
+                        trimmed_section['start_position']['x'] = float(match_x.group(1))
+                    if match_y and not reference_y_was_extracted:
+                        trimmed_section['start_position']['y'] = float(match_y.group(1))
+                    if match_e and not reference_e_was_extracted:
+                        trimmed_section['start_position']['e'] = float(match_e.group(1))
+                    
+                    # Found first G0/G1 with coordinates, stop scanning
+                    if match_x or match_y or match_e:
+                        break
         
         # Scan for actual XYE positions at END boundary (scan backwards)
+        # Track both last E value (might be retracted) and last extrusion E (unretracted)
+        last_e_value = None
+        last_extrusion_e = None
+        prev_e = None
+        found_x = False
+        found_y = False
+        found_e = False
+        
         for line in reversed(trimmed_lines):
             if line.strip().startswith(('G0', 'G1')):
                 match_x = re.search(r' X(\d+\.?\d*)', line)
                 match_y = re.search(r' Y(\d+\.?\d*)', line)
                 match_e = re.search(r' E(-?\d+\.?\d*)', line)
-                if match_x:
+                
+                if match_x and not found_x:
                     trimmed_section['end_position']['x'] = float(match_x.group(1))
-                if match_y:
+                    found_x = True
+                if match_y and not found_y:
                     trimmed_section['end_position']['y'] = float(match_y.group(1))
+                    found_y = True
                 if match_e:
-                    trimmed_section['end_position']['e'] = float(match_e.group(1))
-                break
+                    current_e = float(match_e.group(1))
+                    if not found_e:
+                        last_e_value = current_e
+                        trimmed_section['end_position']['e'] = current_e
+                        found_e = True
+                    
+                    # Detect if this is an extrusion (E increasing) vs retraction (E decreasing)
+                    if prev_e is not None:
+                        if current_e > prev_e:  # Extrusion move (E increasing)
+                            if last_extrusion_e is None:
+                                last_extrusion_e = current_e
+                    prev_e = current_e
+                
+                # Stop after we've found all three values (X, Y, and E)
+                if found_x and found_y and found_e:
+                    break
+        
+        # Store the unretracted E position for transition comments
+        if last_extrusion_e is not None:
+            trimmed_section['unretracted_e'] = last_extrusion_e
+        else:
+            # Fallback: use the last E value if no extrusion found
+            trimmed_section['unretracted_e'] = last_e_value if last_e_value is not None else 0.0
         
         return trimmed_section
     
-    def _extractReferenceFromLayer(self, section: dict, reference_layer_lines: list, reference_z: float) -> None:
+    def _extractReferenceFromLayer(self, section: dict, reference_layer_lines: list, reference_z: float = None) -> dict:
         """Extract XYE values from the reference layer lines and update section's start_position.
         
         This method processes the reference layer (that will be excluded from output) to get
@@ -567,9 +757,11 @@ class HellaFusionLogic:
         Args:
             section: Section data dict to update with reference values
             reference_layer_lines: List of gcode lines from the reference layer
-            reference_z: Z height of the reference layer
+            reference_z: Z height of the reference layer (optional, can be None)
+            
+        Returns:
+            Dict with extracted values: {'x': float, 'y': float, 'e': float} or None for each
         """
-        import re
         
         # Extract the final XYE values from the reference layer
         final_x = None
@@ -600,8 +792,11 @@ class HellaFusionLogic:
         if final_e is not None:
             section['start_position']['e'] = final_e
         
-        # Set the Z to the reference layer's Z height
-        section['start_position']['z'] = reference_z
+        # Set the Z to the reference layer's Z height if provided
+        if reference_z is not None:
+            section['start_position']['z'] = reference_z
+        
+        return {'x': final_x, 'y': final_y, 'e': final_e}
     
     def _extractPreviousLayerValues(self, section: dict, target_z: float) -> dict:
         """Extract XYE values from the layer that matches the actual transition Z height.
@@ -617,7 +812,6 @@ class HellaFusionLogic:
         Returns: Updated section dict with start_position set to correct layer's last XYE,
                  ensuring continuous progression between sections
         """
-        import re
         
         # Find the layer that matches target_z (this will be the first layer after trimming)
         target_layer_num = None
@@ -726,172 +920,30 @@ class HellaFusionLogic:
         
         return section
     
-    def _findAlignmentPoint(self, section_a: dict, section_b: dict, boundary: float) -> tuple:
-        """DEPRECATED: Old alignment search method - kept as fallback only.
-        
-        The UNIFIED approach now uses pre-calculated transitions from the controller
-        instead of this search-based alignment. This method should only be called
-        if the calculated_transitions are not available (error condition).
-        
-        Find perfect layer alignment between two sections near the boundary.
-        
-        The key insight: layers must align like puzzle pieces. If section A ends at Z1,
-        section B must start at Z2 where (Z2 - Z1) = section B's layer height exactly.
-        
-        NEW PRIORITIZATION LOGIC:
-        1. First, find all matches with perfect gap alignment (gap_error < 0.001mm)
-        2. Among perfect matches, choose the one CLOSEST to the boundary
-        3. If no perfect matches, find matches with acceptable gap (gap_error < 0.02mm)
-        4. Among acceptable matches, prioritize:
-           a) Gap quality (smaller gap_error is better)
-           b) Boundary proximity (closer to boundary is better)
-        5. Layers above or below boundary are equally valid
-        
-        Returns (end_z_for_a, start_z_for_b) tuple.
-        """
-        import re
-        
-        # Get layer heights
-        lh_a = section_a.get('layer_height', 0.2)
-        lh_b = section_b.get('layer_height', 0.2)
-        
-        # Extract unique Z values from both sections (actual printing heights, not Z-hops)
-        def extract_layer_z_values(gcode_lines):
-            z_values = []
-            in_layer = False
-            min_z_in_layer = None
-            
-            for line in gcode_lines:
-                if ';LAYER:' in line:
-                    if min_z_in_layer is not None:
-                        z_values.append(min_z_in_layer)
-                    min_z_in_layer = None
-                    in_layer = True
-                    continue
-                    
-                if in_layer:
-                    match = re.search(r' Z(\d+\.?\d*)', line)
-                    if match:
-                        z = float(match.group(1))
-                        if min_z_in_layer is None or z < min_z_in_layer:
-                            min_z_in_layer = z
-            
-            if min_z_in_layer is not None:
-                z_values.append(min_z_in_layer)
-            
-            return sorted(set(z_values))
-        
-        layers_a = extract_layer_z_values(section_a['gcode_lines'])
-        layers_b = extract_layer_z_values(section_b['gcode_lines'])
-        
-        # With initial layer height adjustments, we should find perfect matches close to boundary
-        # Use tighter search range - matches should be within a few layer heights
-        search_range_mm = max(lh_a, lh_b) * 3  # Search within 3 layer heights
-                
-        # Find all candidate matches with gap alignment score
-        # With initial layer height adjustments, we expect perfect or near-perfect matches
-        tolerance = 0.02  # Maximum acceptable gap error (mm)
-        perfect_threshold = 0.001  # Gap error threshold for "perfect" match
-        
-        all_matches = []
-        
-        for z_a in layers_a:
-            # Consider layers within search range
-            if abs(z_a - boundary) > search_range_mm:
-                continue
-            
-            for z_b in layers_b:
-                # Calculate gap error: how far is (z_b - z_a) from ideal layer_height_b?
-                gap_error = abs((z_b - z_a) - lh_b)
-                
-                # Calculate boundary distance: how far is z_a from the target boundary?
-                boundary_distance = abs(z_a - boundary)
-                
-                # Store all matches regardless of gap error (we'll filter later)
-                all_matches.append({
-                    'z_a': z_a,
-                    'z_b': z_b,
-                    'gap_error': gap_error,
-                    'boundary_distance': boundary_distance,
-                    'gap': z_b - z_a
-                })
-        
-        if not all_matches:
-            # Last resort fallback: use layers closest to boundary
-            end_a = max([z for z in layers_a if z <= boundary + lh_a], default=layers_a[-1])
-            start_b = min([z for z in layers_b if z >= boundary], default=layers_b[0])
-            return (end_a, start_b)
-        
-        # STRATEGY 1: With initial layer height adjustments, find the layer of Section A
-        # that's CLOSEST to the boundary, then find Section B's first layer that creates
-        # a proper gap. NOTE: The gap may not match layer_height_b exactly because the
-        # first layer of Section B has an adjusted initial layer height.
-        
-        # Find Section A layers closest to boundary (prefer AT or just below boundary)
-        layers_a_near_boundary = [z for z in layers_a if abs(z - boundary) <= max(lh_a, lh_b)]
-        layers_a_near_boundary.sort(key=lambda z: abs(z - boundary))
-        
-        if layers_a_near_boundary:
-            # Try each candidate ending point for Section A, prioritizing boundary proximity
-            for end_z_a in layers_a_near_boundary:
-                # Find the FIRST layer of Section B at or above this ending point
-                candidate_starts_b = [z for z in layers_b if z >= end_z_a]
-                
-                if candidate_starts_b:
-                    start_z_b = candidate_starts_b[0]  # First layer at or above end of A
-                    gap = start_z_b - end_z_a
-                    boundary_distance = abs(end_z_a - boundary)
-                    
-                    # Accept if very close to boundary - the gap will be whatever the adjusted
-                    # initial layer height dictates, which may differ from layer_height_b
-                    if boundary_distance <= tolerance:  # Within 0.02mm of boundary
-                        return (end_z_a, start_z_b)
-        
-        # Fallback: Try perfect matches from original logic
-        perfect_matches = [m for m in all_matches if m['gap_error'] < perfect_threshold]
-        
-        if perfect_matches:
-            # Sort by boundary_distance - we want the closest to user-defined height
-            perfect_matches.sort(key=lambda x: x['boundary_distance'])
-            best = perfect_matches[0]
-            return (best['z_a'], best['z_b'])
-        
-        # STRATEGY 2: Find near-perfect matches (gap_error < tolerance) closest to boundary
-        # Sort by boundary_distance first to get closest to target height
-        acceptable_matches = [m for m in all_matches if m['gap_error'] < tolerance]
-        
-        if acceptable_matches:
-            # Sort by boundary_distance first (closest to target), then gap quality
-            acceptable_matches.sort(key=lambda x: (x['boundary_distance'], x['gap_error']))
-            best = acceptable_matches[0]
-            return (best['z_a'], best['z_b'])
-        
-        # STRATEGY 3 (FALLBACK): Find best match prioritizing boundary proximity
-        # Sort all matches by boundary distance (closest to target height wins)
-        all_matches.sort(key=lambda x: (x['boundary_distance'], x['gap_error']))
-        best = all_matches[0]
-        
-        # Only log significant alignment issues
-        if best['gap_error'] > tolerance:
-            Logger.log("w", f"Layer alignment gap error {best['gap_error']:.3f}mm exceeds tolerance - may cause extrusion issues")
-        if best['boundary_distance'] > max(lh_a, lh_b):
-            Logger.log("w", f"Transition is {best['boundary_distance']:.3f}mm away from target boundary {boundary:.3f}mm")
-        
-        return (best['z_a'], best['z_b'])
+    # PHASE 3: _findAlignmentPoint() method REMOVED (~150 lines)
+    # No longer needed - TransitionCalculator provides exact boundaries via TransitionData.
+    # This eliminates all Z-coordinate searching and fallback logic!
     
     def _combineSections(self, sections: list, first_gcode_file: str = None, calculated_transitions: list = None) -> list:
-        """UNIFIED APPROACH: Combine sections using exact calculated transition points.
+        """PHASE 3: Combine sections using TransitionData objects (single source of truth).
         
-        This method now uses the pre-calculated transition data from the controller
-        instead of searching for alignment points. The controller has already:
-        1. Determined exact Z coordinates where transitions occur
+        This method extracts TransitionData objects from calculated_transitions and uses
+        their pre-calculated boundaries directly. No more searching, no fallbacks.
+        
+        TransitionCalculator has already:
+        1. Determined EXACT Z coordinates where transitions occur (actual_start_z, actual_end_z)
         2. Calculated perfect initial layer height adjustments for gap-free transitions
-        3. Used iterative pattern matching where each section becomes base for next
+        3. Used iterative pattern matching where each section becomes the base pattern for the next
+        4. Validated all transitions for continuity
         
         Args:
             sections: List of section data dicts from gcode extraction
             first_gcode_file: Path to first gcode file to extract header from
-            calculated_transitions: Pre-calculated transition data from controller
+            calculated_transitions: REQUIRED - List of dicts containing '_transition_data' 
+                                   (TransitionData objects from TransitionCalculator)
+                                   
+        Raises:
+            ValueError: If TransitionData objects are missing from calculated_transitions
         """
         try:
             combined = []
@@ -921,44 +973,48 @@ class HellaFusionLogic:
                 combined.append(f";Section {section['section_number']}: Z{section['start_z']:.2f}mm - {end_str}\n")
             combined.append(";=========================================\n\n")
             
-            # STEP 1: UNIFIED APPROACH - Use pre-calculated transition points
+            # STEP 1: PHASE 3 - Extract TransitionData objects and use pre-calculated boundaries
+            # No more searching or fallbacks - TransitionCalculator already did all the work!
             alignment_points = []
+            transition_data_objects = []
             
-            if calculated_transitions and len(calculated_transitions) == len(sections):
-                # Use exact transition points from controller calculation
-                for i in range(len(sections) - 1):
-                    current_calc = calculated_transitions[i]
-                    next_calc = calculated_transitions[i+1]
-                    
-                    # Get the actual transition Z from calculation (where previous section ACTUALLY ends)
-                    end_z_a = current_calc['actual_transition_z'] or current_calc['end_z']
-                    
-                    # Next section starts at same Z (continuous progression)
-                    # Use the same actual transition Z for perfect alignment
-                    start_z_b = end_z_a
-                    
-                    alignment_points.append((i, end_z_a, start_z_b))
-            else:
-                # Fallback to old search method
-                for i in range(len(sections) - 1):
-                    boundary = sections[i]['end_z']
-                    if boundary:
-                        end_z_a, start_z_b = self._findAlignmentPoint(sections[i], sections[i+1], boundary)
-                        alignment_points.append((i, end_z_a, start_z_b))
+            # Extract TransitionData objects from sections
+            for i, section_dict in enumerate(calculated_transitions):
+                td = section_dict.get('_transition_data')
+                if td is None:
+                    raise ValueError(f"Section {i}: Missing _transition_data object. Phase 3 requires TransitionData from TransitionCalculator.")
+                if not isinstance(td, TransitionData):
+                    raise ValueError(f"Section {i}: _transition_data is not a TransitionData object (got {type(td)})")
+                transition_data_objects.append(td)
             
-            # STEP 2: Build trimming boundaries for each section
-            # Each section needs to know its min_z and max_z BEFORE any trimming happens
+            # Build alignment points from TransitionData objects
+            # For N sections, we have N-1 transition boundaries
+            for i in range(len(transition_data_objects) - 1):
+                current_td = transition_data_objects[i]
+                next_td = transition_data_objects[i + 1]
+                
+                # Use EXACT calculated boundaries from TransitionCalculator
+                # Current section ends at its actual_end_z
+                end_z_a = current_td.actual_end_z
+                # Next section starts at its actual_start_z (should match end_z_a for continuity)
+                start_z_b = next_td.actual_start_z
+                
+                alignment_points.append((i, end_z_a, start_z_b))
+            
+            # STEP 2: Build trimming boundaries for each section using TransitionData
+            # CRITICAL FIX: Use actual_start_z/actual_end_z from TransitionData (calculated boundaries)
+            # NOT user-specified boundaries! Each section must be trimmed based on ITS OWN parameters.
             trim_boundaries = {}
             for i in range(len(sections)):
-                trim_boundaries[i] = {'min_z': None, 'max_z': None}
-            
-            # Set boundaries from alignment points
-            for align_i, end_z_a, start_z_b in alignment_points:
-                # Section align_i ends at end_z_a (actual transition Z from closest layer detection)
-                trim_boundaries[align_i]['max_z'] = end_z_a
-                # Section align_i+1 starts at start_z_b (same as end_z_a for continuous progression)
-                # This ensures E values are extracted from the correct layer
-                trim_boundaries[align_i + 1]['min_z'] = start_z_b
+                td = transition_data_objects[i]
+                # For each section, use the CALCULATED boundaries from TransitionData
+                # actual_start_z = where this section ACTUALLY starts (after adjustment)
+                # actual_end_z = where this section ACTUALLY ends (None for last section = top)
+                trim_boundaries[i] = {
+                    'min_z': td.actual_start_z if i > 0 else None,  # First section starts from 0, no trimming needed
+                    'max_z': td.actual_end_z,  # Can be None for last section
+                    'transition_data': td  # Pass TransitionData object for layer calculations
+                }
             
             # STEP 3: For sections 2+, extract XYE values from previous layer BEFORE trimming
             # The previous layer is still in the original section at this point
@@ -967,14 +1023,15 @@ class HellaFusionLogic:
                 if start_z_for_this_section is not None:
                     sections[i] = self._extractPreviousLayerValues(sections[i], start_z_for_this_section)
             
-            # STEP 4: Now do the actual trimming - ONCE per section with both min_z and max_z
+            # STEP 4: Now do the actual trimming - ONCE per section with TransitionData
             for i in range(len(sections)):
+                td = trim_boundaries[i]['transition_data']
                 min_z = trim_boundaries[i]['min_z']
                 max_z = trim_boundaries[i]['max_z']
                 
                 # Only trim if there are actual boundaries set
                 if min_z is not None or max_z is not None:
-                    sections[i] = self._trimSectionToZ(sections[i], min_z, max_z)
+                    sections[i] = self._trimSectionToZ(sections[i], min_z, max_z, td)
             
             # Count total layers AFTER trimming
             current_layer = 0
@@ -1064,7 +1121,7 @@ class HellaFusionLogic:
             return combined
             
         except Exception as e:
-            Logger.logException("e", f"Error combining sections: {str(e)}")
+            Logger.log("e", f"Error combining sections: {str(e)}")
             return []
     
     def _shouldPrimeForTransition(self, prev_section: dict, next_section: dict, calculated_transitions: list = None) -> dict:
@@ -1387,7 +1444,10 @@ class HellaFusionLogic:
         
         transition.append(";---------- TRANSITION CODE START ----------\n")
         transition.append(f";From Section {prev_section['section_number']} to Section {next_section['section_number']}\n")
-        transition.append(f";Previous section ended at: X{end_state['x']:.3f} Y{end_state['y']:.3f} Z{end_state['z']:.3f} E{end_state['e']:.5f}\n")
+        
+        # Use unretracted E value for comment (more useful for debugging)
+        prev_unretracted_e = prev_section.get('unretracted_e', end_state['e'])
+        transition.append(f";Previous section ended at: X{end_state['x']:.3f} Y{end_state['y']:.3f} Z{end_state['z']:.3f} E{prev_unretracted_e:.5f}\n")
         transition.append(f";Next section starts at: X{start_state['x']:.3f} Y{start_state['y']:.3f} Z{start_state['z']:.3f} E{start_state['e']:.5f}\n")
         
         # Handle retraction state - we'll prime AFTER travel, store the state for now

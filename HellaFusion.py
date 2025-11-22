@@ -150,7 +150,7 @@ class HellaFusion(Extension):
             if success:
                 completion_message = Message(
                     title="HellaFusion Complete",
-                    text=f"Successfully created spliced gcode file:\n{output_file}",
+                    text=f"Successfully created fused gcode file:\n{output_file}",
                     message_type=Message.MessageType.POSITIVE
                 )
                 # Add "Open Folder" action button
@@ -161,7 +161,7 @@ class HellaFusion(Extension):
             else:
                 completion_message = Message(
                     title="HellaFusion Failed",
-                    text=f"Failed to create spliced gcode:\n{error_message}",
+                    text=f"Failed to create fused gcode:\n{error_message}",
                     message_type=Message.MessageType.ERROR
                 )
                 completion_message.show()

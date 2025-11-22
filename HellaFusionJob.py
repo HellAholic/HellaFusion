@@ -24,14 +24,10 @@ from UM.FileHandler.WriteFileJob import WriteFileJob
 from UM.FileHandler.FileWriter import FileWriter
 
 from cura.CuraApplication import CuraApplication
-from cura.Machines.ContainerTree import ContainerTree
 
 from .HellaFusionLogic import HellaFusionLogic
 from .PluginConstants import PluginConstants
-from .HellaFusionExceptions import (
-    HellaFusionException, ProfileSwitchError, SlicingTimeoutError, 
-    SlicingError, BackendError, FileProcessingError
-)
+from .HellaFusionExceptions import (ProfileSwitchError, BackendError)
 from .JobStateManager import JobStateManager, JobState
 from .ProfileSwitchingService import ProfileSwitchingService
 
@@ -39,7 +35,7 @@ import time
 import os
 import tempfile
 from datetime import datetime
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any
 
 
 class HellaFusionJob(Job):
@@ -230,12 +226,22 @@ class HellaFusionJob(Job):
                     self._results['error_message'] = detailed_error
                     break
                 
+                # Store adjusted_initial if it was calculated (needed for trimming)
+                adjusted_initial_value = None
+                original_initial_value = None
+                if self._calculated_transitions and index < len(self._calculated_transitions):
+                    calc_section = self._calculated_transitions[index]
+                    adjusted_initial_value = calc_section.get('adjusted_initial')
+                    original_initial_value = calc_section.get('initial_layer_height')
+                
                 self._temp_gcode_files.append({
                     'section_number': section_num,
                     'file_path': gcode_file,
                     'start_height': transition['start_height'],
                     'end_height': transition['end_height'],
-                    'layer_height': layer_height  # Store layer height from profile
+                    'layer_height': layer_height,  # Store layer height from profile
+                    'adjusted_initial': adjusted_initial_value,  # Store adjusted initial layer height (for trimming)
+                    'original_initial': original_initial_value  # Store original initial layer height
                 })
                 
                 # Step 6: Section completed successfully
@@ -313,7 +319,7 @@ class HellaFusionJob(Job):
             
         except Exception as e:
             error_msg = f"Job failed: {str(e)}"
-            Logger.logException("e", f"HellaFusionJob failed: {str(e)}")
+            Logger.log("e", f"HellaFusionJob failed: {str(e)}")
             
             # Emit error with exception object for better UI handling
             self.statusChanged.emit({
@@ -368,7 +374,7 @@ class HellaFusionJob(Job):
             
         except Exception as e:
             error_msg = f"Exception: {str(e)}"
-            Logger.logException("e", f"Error slicing section {section_number}: {error_msg}")
+            Logger.log("e", f"Error slicing section {section_number}: {error_msg}")
             return "", error_msg
     
     def _waitForSlice(self) -> tuple:
@@ -424,7 +430,7 @@ class HellaFusionJob(Job):
                 
         except Exception as e:
             error_msg = f"Exception during slice wait: {str(e)}"
-            Logger.logException("e", error_msg)
+            Logger.log("e", error_msg)
             return False, error_msg
     
     def _saveTemporaryGcode(self, section_number: int) -> str:
@@ -495,7 +501,7 @@ class HellaFusionJob(Job):
             return temp_path
             
         except Exception as e:
-            Logger.logException("e", f"Error saving temporary gcode: {str(e)}")
+            Logger.log("e", f"Error saving temporary gcode: {str(e)}")
             return ""
     
     def _combineGcodeFiles(self) -> tuple:
@@ -550,14 +556,17 @@ class HellaFusionJob(Job):
                         retraction_settings = transition.get('profile_retraction_settings')
                         break
                 
-                sections_data.append({
+                section_data = {
                     'section_number': gcode_info['section_number'],
                     'gcode_file': gcode_info['file_path'],
                     'start_height': gcode_info['start_height'],
                     'end_height': gcode_info['end_height'],
                     'layer_height': gcode_info.get('layer_height', 0.2),  # Pass layer height from profile
-                    'profile_retraction_settings': retraction_settings  # Pass retraction settings from profile
-                })
+                    'profile_retraction_settings': retraction_settings,  # Pass retraction settings from profile
+                    'adjusted_initial': gcode_info.get('adjusted_initial'),  # Pass adjusted initial layer height
+                    'original_initial': gcode_info.get('original_initial')  # Pass original initial layer height
+                }
+                sections_data.append(section_data)
             
             # Combine gcode files using UNIFIED approach
             success = self._logic.combineGcodeFiles(sections_data, output_path, self._calculated_transitions)
@@ -578,7 +587,7 @@ class HellaFusionJob(Job):
             
         except Exception as e:
             error_msg = f"Exception: {str(e)}"
-            Logger.logException("e", f"Error combining gcode files: {error_msg}")
+            Logger.log("e", f"Error combining gcode files: {error_msg}")
             return "", error_msg
     
     def _switchQualityProfile(self, profile_id: str, intent_category: str = None, intent_container_id: str = None) -> bool:
@@ -589,7 +598,7 @@ class HellaFusionJob(Job):
             Logger.log("e", f"Profile switch failed: {e}")
             return False
         except Exception as e:
-            Logger.logException("e", f"Unexpected error switching quality profile: {str(e)}")
+            Logger.log("e", f"Unexpected error switching quality profile: {str(e)}")
             return False
     
     def _storeOriginalMachineState(self):
@@ -597,7 +606,7 @@ class HellaFusionJob(Job):
         try:
             self._original_machine_state = self._profile_service.backup_current_state()
         except Exception as e:
-            Logger.logException("e", f"Error storing original machine state: {str(e)}")
+            Logger.log("e", f"Error storing original machine state: {str(e)}")
     
     def _restoreOriginalMachineState(self):
         """Restore the original machine state after processing."""
@@ -615,7 +624,7 @@ class HellaFusionJob(Job):
             self._clearLayerHeightAdjustment()
                 
         except Exception as e:
-            Logger.logException("e", f"Error restoring original machine state: {str(e)}")
+            Logger.log("e", f"Error restoring original machine state: {str(e)}")
     
     def _cleanup(self):
         """Comprehensive cleanup with error recovery for all resources."""

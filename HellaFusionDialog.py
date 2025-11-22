@@ -15,6 +15,8 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 import os
+import subprocess
+import platform
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
                              QPushButton, QLineEdit, QTextEdit, QProgressBar,
                              QFileDialog, QSpinBox, QGroupBox, QGridLayout,
@@ -25,6 +27,11 @@ from PyQt6.QtCore import pyqtSignal, Qt, QTimer
 from PyQt6.QtGui import QFont
 
 from UM.Logger import Logger
+from cura.CuraApplication import CuraApplication
+from UM.Scene.Iterator.DepthFirstIterator import DepthFirstIterator
+
+from .HellaFusionExceptions import (HellaFusionException, ProfileSwitchError,
+                                    BackendError, SlicingTimeoutError)
 from .PluginConstants import PluginConstants
 from .HellaFusionController import HellaFusionController
 
@@ -387,6 +394,9 @@ class HellaFusionDialog(QDialog):
             }
         }
         
+        # Flag to prevent saving during initialization
+        self._is_loading = True
+        
         self._setupUI()
         self._loadSettings()
         
@@ -395,6 +405,9 @@ class HellaFusionDialog(QDialog):
         
         # Connect existing UI elements to invalidation handlers
         self._connectInvalidationHandlers()
+        
+        # Enable saving now that initialization is complete
+        self._is_loading = False
         
     def _setupUI(self):
         """Set up the user interface."""
@@ -440,10 +453,22 @@ class HellaFusionDialog(QDialog):
         self._dest_folder_edit.textChanged.connect(self._saveSettings)
         config_layout.addWidget(self._dest_folder_edit, 1, 1)
         
+        # Browse and Open Folder buttons
+        dest_buttons_layout = QHBoxLayout()
+        dest_buttons_layout.setSpacing(5)
+        
         self._dest_browse_btn = QPushButton("Browse...")
         self._dest_browse_btn.setStyleSheet(PluginConstants.SECONDARY_BUTTON_STYLE)
         self._dest_browse_btn.clicked.connect(self._browseDestFolder)
-        config_layout.addWidget(self._dest_browse_btn, 1, 2)
+        dest_buttons_layout.addWidget(self._dest_browse_btn)
+        
+        self._open_folder_btn = QPushButton("Open Folder")
+        self._open_folder_btn.setStyleSheet(PluginConstants.SECONDARY_BUTTON_STYLE)
+        self._open_folder_btn.setToolTip("Open destination folder in file explorer")
+        self._open_folder_btn.clicked.connect(self._openDestFolder)
+        dest_buttons_layout.addWidget(self._open_folder_btn)
+        
+        config_layout.addLayout(dest_buttons_layout, 1, 2)
         
         # Slice timeout
         timeout_label = QLabel("Slice Timeout (seconds):")
@@ -756,7 +781,7 @@ class HellaFusionDialog(QDialog):
             QTimer.singleShot(500, self._finishProfileUpdate)
             
         except Exception as e:
-            Logger.logException("e", f"Error updating quality profiles: {str(e)}")
+            Logger.log("e", f"Error updating quality profiles: {str(e)}")
             self._logMessage(f"Error updating quality profiles: {str(e)}", is_error=True)
             # Re-enable the button on error
             self._update_profiles_btn.setEnabled(True)
@@ -851,7 +876,7 @@ class HellaFusionDialog(QDialog):
             try:
                 self._calculated_transitions = self._controller.calculateTransitionAdjustments(transitions)
             except Exception as calc_error:
-                Logger.logException("e", f"Exception during calculation: {str(calc_error)}")
+                Logger.log("e", f"Exception during calculation: {str(calc_error)}")
                 self._logMessage(f"Calculation error: {str(calc_error)}", is_error=True)
                 import traceback
                 self._logMessage(traceback.format_exc(), is_error=True)
@@ -988,7 +1013,6 @@ class HellaFusionDialog(QDialog):
     def _updateModelInfo(self):
         """Update the model info display using Cura's project name and sliceable objects."""
         try:
-            from cura.CuraApplication import CuraApplication
             application = CuraApplication.getInstance()
             
             # Get the project name from PrintInformation (includes printer abbreviation)
@@ -997,7 +1021,6 @@ class HellaFusionDialog(QDialog):
             
             # Get sliceable nodes only (excludes build plate, camera, and other non-printable objects)
             scene = application.getController().getScene()
-            from UM.Scene.Iterator.DepthFirstIterator import DepthFirstIterator
             sliceable_nodes = [
                 node for node in DepthFirstIterator(scene.getRoot()) 
                 if node.callDecoration("isSliceable") and node.getMeshData()
@@ -1042,6 +1065,55 @@ class HellaFusionDialog(QDialog):
             self._dest_folder_edit.setText(folder)
             self._saveSettings()
     
+    def _openDestFolder(self):
+        """Open destination folder in native file explorer."""
+        folder_path = self._dest_folder_edit.text().strip()
+        
+        # Check if folder path is set
+        if not folder_path:
+            QMessageBox.warning(
+                self,
+                "No Folder Selected",
+                "Please select a destination folder first."
+            )
+            return
+        
+        # Check if folder exists
+        if not os.path.exists(folder_path):
+            QMessageBox.warning(
+                self,
+                "Folder Not Found",
+                f"The folder does not exist:\n{folder_path}\n\nPlease select a valid folder."
+            )
+            return
+        
+        try:
+            # Open folder in native file explorer based on OS
+            system = platform.system()
+            
+            if system == "Windows":
+                # Windows Explorer
+                os.startfile(folder_path)
+            elif system == "Darwin":
+                # macOS Finder
+                subprocess.run(["open", folder_path], check=True)
+            elif system == "Linux":
+                # Linux file manager (try common ones)
+                subprocess.run(["xdg-open", folder_path], check=True)
+            else:
+                QMessageBox.information(
+                    self,
+                    "Unsupported OS",
+                    f"Opening folders is not supported on {system}.\n\nFolder path:\n{folder_path}"
+                )
+        except Exception as e:
+            Logger.log("e", f"Failed to open destination folder: {e}")
+            QMessageBox.warning(
+                self,
+                "Error Opening Folder",
+                f"Could not open folder:\n{folder_path}\n\nError: {str(e)}"
+            )
+    
     def _onStartClicked(self):
         """Handle start button click."""
         # Update model info first
@@ -1070,7 +1142,7 @@ class HellaFusionDialog(QDialog):
         
         # Start processing
         self._setProcessingState(True)
-        self._logMessage("Starting gcode splicing process...")
+        self._logMessage("Starting gcode fusion process...")
         self._logMessage("Using model currently on build plate...")
         
         # If transitions haven't been calculated OR calculations are invalid, auto-calculate them now
@@ -1181,9 +1253,6 @@ class HellaFusionDialog(QDialog):
         Args:
             exception: The exception to display (can be HellaFusionException or regular Exception)
         """
-        from .HellaFusionExceptions import (
-            HellaFusionException, ProfileSwitchError, BackendError, SlicingTimeoutError
-        )
         
         if isinstance(exception, HellaFusionException):
             # Use the user-friendly message from custom exceptions
@@ -1200,7 +1269,7 @@ class HellaFusionDialog(QDialog):
     
     def _showErrorDialog(self, title: str, message: str):
         """Show an error dialog to the user."""
-        from PyQt6.QtWidgets import QMessageBox
+
         
         msg_box = QMessageBox(self)
         msg_box.setIcon(QMessageBox.Icon.Critical)
@@ -1231,11 +1300,19 @@ class HellaFusionDialog(QDialog):
         """Load saved settings."""
         settings = self._controller.loadSettings()
         
-        if 'dest_folder' in settings:
-            self._dest_folder_edit.setText(settings['dest_folder'])
+        # Block signals to prevent triggering _saveSettings during load
+        self._dest_folder_edit.blockSignals(True)
+        self._slice_timeout_spin.blockSignals(True)
         
-        if 'slice_timeout' in settings:
-            self._slice_timeout_spin.setValue(int(settings['slice_timeout']))
+        try:
+            if 'dest_folder' in settings:
+                self._dest_folder_edit.setText(settings['dest_folder'])
+            if 'slice_timeout' in settings:
+                self._slice_timeout_spin.setValue(int(settings['slice_timeout']))
+        finally:
+            # Re-enable signals
+            self._dest_folder_edit.blockSignals(False)
+            self._slice_timeout_spin.blockSignals(False)
         
         # Update model info on load
         self._updateModelInfo()
@@ -1244,6 +1321,10 @@ class HellaFusionDialog(QDialog):
     
     def _saveSettings(self):
         """Save current settings."""
+        # Don't save during initialization
+        if hasattr(self, '_is_loading') and self._is_loading:
+            return
+            
         settings = {
             'dest_folder': self._dest_folder_edit.text(),
             'slice_timeout': self._slice_timeout_spin.value()
@@ -1254,7 +1335,7 @@ class HellaFusionDialog(QDialog):
     def _connectSceneSignals(self):
         """Connect to scene change signals to update model info."""
         try:
-            from cura.CuraApplication import CuraApplication
+            
             application = CuraApplication.getInstance()
             scene = application.getController().getScene()
             

@@ -40,7 +40,7 @@ class PluginConstants:
     TEMP_FILE_PREFIX = "hellafusion_temp_"
     OUTPUT_FILE_SUFFIX = "_hellafused"
     DEFAULT_LAYER_HEIGHT = 0.2  # mm - fallback when layer height can't be determined
-    REMOVE_TEMP_FILES = True  # Whether to remove temporary files after processing
+    REMOVE_TEMP_FILES = False  # Whether to remove temporary files after processing
     
     # Precision constants
     LAYER_ALIGNMENT_TOLERANCE = 0.02  # mm
