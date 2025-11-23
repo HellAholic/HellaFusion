@@ -40,7 +40,7 @@ class PluginConstants:
     TEMP_FILE_PREFIX = "hellafusion_temp_"
     OUTPUT_FILE_SUFFIX = "_hellafused"
     DEFAULT_LAYER_HEIGHT = 0.2  # mm - fallback when layer height can't be determined
-    REMOVE_TEMP_FILES = False  # Whether to remove temporary files after processing
+    REMOVE_TEMP_FILES = True  # Whether to remove temporary files after processing
     
     # Precision constants
     LAYER_ALIGNMENT_TOLERANCE = 0.02  # mm
@@ -526,3 +526,215 @@ class PluginConstants:
     LABEL_STYLE_ERROR = f"{LABEL_STYLE}; color: #F44336;"
     LABEL_STYLE_SECTION = f"{LABEL_STYLE}; font-weight: bold; min-width: 80px;"
     LABEL_STYLE_TRANSITION = f"{LABEL_STYLE}; color: #00912b; font-weight: bold; min-width: 120px;"
+
+    HELP_CONTENT = {
+        "overview": {
+            "title": "Overview",
+            "content": """
+                <h2>🔥 HellaFusion - Advanced Multi-Quality Printing</h2>
+                <p><b>Revolutionary 3D printing technology</b> that enables <b>dynamic quality switching</b> within a single print job. Print different sections of your model with completely different quality profiles!</p>
+                
+                <h3>🚀 Perfect For:</h3>
+                <ul>
+                    <li><b>Speed + Quality Fusion:</b> Draft mode for hidden sections, fine detail where it matters</li>
+                    <li><b>Structural Optimization:</b> Heavy infill for bases, lightweight for tops</li>
+                    <li><b>Material Efficiency:</b> Balance strength, speed, and material usage intelligently</li>
+                    <li><b>Advanced Prototyping:</b> Test multiple quality settings in a single print</li>
+                    <li><b>Complex Geometries:</b> Adapt quality to each section's requirements</li>
+                </ul>
+                
+                <h3>⚡ Advanced Fusion Technology:</h3>
+                <p>HellaFusion uses intelligent algorithms to slice your model multiple times with different quality profiles, then <b>seamlessly fuses</b> the gcode sections with:</p>
+                <ul>
+                    <li><b>Smart Layer Alignment:</b> Automatic initial layer height adjustments</li>
+                    <li><b>Perfect Transitions:</b> Seamless quality switches at optimal points</li>
+                    <li><b>Intelligent Analysis:</b> Real-time calculation of optimal fusion parameters</li>
+                </ul>
+                
+                <p><b>📍 Important:</b> The same model on your build plate is used for all sections - only the slicing settings change to create the fusion effect.</p>
+            """
+        },
+        "transitions": {
+            "title": "Setting Up Transitions",
+            "content": """
+                <h2>🎯 Mastering Fusion Transitions</h2>
+                <p><b>Transitions are fusion points</b> where HellaFusion switches from one quality profile to another. Each section between transitions uses a completely different quality profile for optimal results.</p>
+                
+                <h3>🔄 How Fusion Transitions Work:</h3>
+                <ul>
+                    <li><b>Section 1:</b> Z=0mm → First transition (uses Profile A)</li>
+                    <li><b>Fusion Point:</b> Seamless quality switch at Z=X mm</li>
+                    <li><b>Section 2:</b> Z=X mm → Next transition (uses Profile B)</li>
+                    <li><b>Unlimited Sections:</b> Add as many fusion points as needed!</li>
+                </ul>
+                
+                <h3>🧠 Pro Fusion Strategies:</h3>
+                <ul>
+                    <li><b>🏗️ Structural Transitions:</b> Plan fusion points at model features - between flat sections, after support structures</li>
+                    <li><b>🎨 Visual Optimization:</b> Avoid mid-feature transitions - never fuse in the middle of thin walls or critical details</li>
+                    <li><b>⚡ Smart Alignment:</b> HellaFusion automatically aligns to optimal layer boundaries for seamless fusion</li>
+                    <li><b>📏 Height Logic:</b> Transitions must be in ascending Z-height order for proper fusion sequencing</li>
+                </ul>
+                
+                <h3>🛠️ Fusion Control Panel:</h3>
+                <ul>
+                    <li><b>➕ Add Transition:</b> Creates new fusion point and next section</li>
+                    <li><b>➖ Remove Last Transition:</b> Removes most recent fusion point</li>
+                    <li><b>✅ Smart Validation:</b> Real-time checks ensure proper fusion order and model compatibility</li>
+                    <li><b>🧮 Calculate Transitions:</b> Advanced analysis for optimal fusion parameters</li>
+                </ul>
+            """
+        },
+        "profiles": {
+            "title": "Quality Profiles",
+            "content": """
+                <h2>🎨 Quality Profile Fusion</h2>
+                <p>Each section can use a <b>completely different quality profile</b> from your Cura configuration. This is where <b>HellaFusion's true power</b> is unleashed!</p>
+                
+                <h3>🏷️ Available Profile Categories:</h3>
+                <p>HellaFusion automatically detects all profiles compatible with your current printer and material setup:</p>
+                <ul>
+                    <li><b>🔧 Default Profiles:</b> Standard quality options (Draft, Normal, Fine, Ultra Fine)</li>
+                    <li><b>⚙️ Engineering Profiles:</b> Optimized for strength, durability, and mechanical properties</li>
+                    <li><b>✨ Visual Profiles:</b> Perfect surface quality and aesthetic finish</li>
+                    <li><b>🎯 Custom Profiles:</b> Your personalized profiles (marked with ⭐)</li>
+                </ul>
+                
+                <h3>🔄 Smart Profile Management:</h3>
+                <p><b>Reload Profiles Button</b> - Use when you:</p>
+                <ul>
+                    <li>🖨️ Switch printer configurations in Cura</li>
+                    <li>🧵 Change materials or nozzle sizes</li>
+                    <li>➕ Create or modify custom quality profiles</li>
+                    <li>🔧 Update printer firmware or settings</li>
+                </ul>
+                <p><b>Smart Refresh:</b> Updates available profiles without losing your current section selections!</p>
+                
+                <h3>🧠 Pro Fusion Tips:</h3>
+                <ul>
+                    <li><b>⚡ Layer Height Harmony:</b> Similar layer heights between sections create smoother transitions</li>
+                    <li><b>🏃 Speed Consistency:</b> Moderate speed changes prevent extrusion artifacts at fusion points</li>
+                    <li><b>🧪 Test First:</b> Experiment with profile combinations on small test models</li>
+                    <li><b>🎯 Strategic Selection:</b> Match profile characteristics to each section's requirements</li>
+                </ul>
+            """
+        },
+        "slicing": {
+            "title": "Slicing Process",
+            "content": """
+                <h2>How the Slicing Process Works</h2>
+                <p>The plugin uses a two-step process for optimal layer alignment between sections:</p>
+                
+                <h3>Step 1: Calculate Transitions (Recommended)</h3>
+                <p>Click the <b>"Calculate Transitions"</b> button (orange) before slicing to:</p>
+                <ul>
+                    <li><b>Analyze layer alignment:</b> Checks where layers will actually end for each section</li>
+                    <li><b>Calculate adjustments:</b> Determines optimal initial layer height for each section to align with the previous section's layers</li>
+                    <li><b>Minimize gaps:</b> Chooses whether to align above or below to minimize adjustments</li>
+                    <li><b>Display preview:</b> Shows Z-ranges, layer heights, and proposed adjustments</li>
+                </ul>
+                <p><b>Why calculate first?</b> Different profiles have different layer heights. Without adjustment, layers may not align at transitions, causing gaps or overlaps.</p>
+                <p><b>Warnings:</b> The calculator will warn you if:</p>
+                <ul>
+                    <li><b>Adaptive Layer Height</b> is enabled (may conflict with adjustments)</li>
+                    <li><b>Tree Support</b> is enabled (non-deterministic between slices, can cause floating support)</li>
+                </ul>
+                
+                <h3>Step 2: Start Fusing</h3>
+                <p>Click <b>"Start Fusing"</b> to perform the actual fusing:</p>
+
+                <h4>2a. Model Detection</h4>
+                <p>The plugin detects the model currently on your build plate.</p>
+                
+                <h4>2b. Profile Switching and Slicing</h4>
+                <p>For each section:</p>
+                <ol>
+                    <li>Switches to the selected quality profile</li>
+                    <li><b>Applies initial layer height adjustment</b> (if calculated and needed) to align layers</li>
+                    <li>Waits for Cura to slice the model</li>
+                    <li>Saves the gcode to a temporary file</li>
+                    <li>Records actual layer heights achieved</li>
+                </ol>
+                <p><b>Note:</b> Section 1 is never adjusted (it's the build plate adhesion layer). Each subsequent section is adjusted to align with where the previous section actually ended.</p>
+                
+                <h4>2c. Gcode Extraction</h4>
+                <p>The plugin extracts the relevant Z-height ranges from each gcode file:</p>
+                <ul>
+                    <li>Parses gcode to track Z position</li>
+                    <li>Identifies layer boundaries based on actual layer heights</li>
+                    <li>Extracts only layers within each section's range</li>
+                    <li>Transitions always occur at layer boundaries (never mid-layer)</li>
+                </ul>
+                
+                <h4>2d. Intelligent Combining</h4>
+                <p>Combines the sections into one file:</p>
+                <ul>
+                    <li>Uses startup gcode from Section 1</li>
+                    <li>Fuses sections at exact layer boundaries</li>
+                    <li>Maintains E (extrusion) continuity across sections</li>
+                    <li>Uses shutdown gcode from the final section</li>
+                </ul>
+                
+                <h4>2e. Output</h4>
+                <p>Final gcode is saved to your destination folder with a timestamp. Temporary files are automatically cleaned up.</p>
+                
+                <h3>Manual vs Auto-Calculate:</h3>
+                <ul>
+                    <li><b>Click Calculate first (Recommended):</b> Preview adjustments before slicing</li>
+                    <li><b>Skip Calculate:</b> Plugin auto-calculates when you click Start Fusing</li>
+                </ul>
+                
+                <h3>Timeout Setting:</h3>
+                <p>The <b>Slice Timeout</b> (default 300s) prevents infinite waiting if slicing fails. Increase for complex models.</p>
+            """
+        },
+        "troubleshooting": {
+            "title": "Troubleshooting",
+            "content": """
+                <h2>Common Issues and Solutions</h2>
+                <h3>Slicing Timeout</h3>
+                <p><b>Problem:</b> "Slicing timeout" error appears</p>
+                <p><b>Solutions:</b></p>
+                <ul>
+                    <li>Increase the Slice Timeout value in Configuration</li>
+                    <li>Simplify your model (reduce polygon count)</li>
+                    <li>Check if Cura is responsive (not frozen)</li>
+                    <li>Try slicing manually in Cura first to verify the model and settings work</li>
+                </ul>
+                <h3>Transition Height Validation Errors</h3>
+                <p><b>Problem:</b> "Transition heights must be in ascending order" error</p>
+                <p><b>Solutions:</b></p>
+                <ul>
+                    <li>Check that each transition height is greater than the previous one</li>
+                    <li>Remove and re-add transitions in the correct order</li>
+                    <li>Ensure transition heights are less than your model height</li>
+                </ul>
+                <h3>Quality Profile Issues</h3>
+                <p><b>Problem:</b> Expected profiles not showing in dropdowns</p>
+                <p><b>Solutions:</b></p>
+                <ul>
+                    <li>Click "Reload Profiles from Cura" button</li>
+                    <li>Verify the profile exists for your current printer and material in Cura's normal slicing view</li>
+                    <li>Check that your printer definition supports the profile</li>
+                </ul>
+                <h3>Visual Artifacts at Transitions</h3>
+                <p><b>Problem:</b> Visible lines or imperfections where sections meet</p>
+                <p><b>Solutions:</b></p>
+                <ul>
+                    <li>Use profiles with similar layer heights to minimize Z-seam visibility</li>
+                    <li>Position transitions at model features (edges, flat surfaces) where they're less noticeable</li>
+                    <li>Ensure both profiles use compatible print speeds and temperatures</li>
+                    <li>Consider adding a small transition buffer in your model design</li>
+                </ul>
+                <h3>Processing Failed During Combining</h3>
+                <p><b>Problem:</b> Error occurs during the combining step</p>
+                <p><b>Solutions:</b></p>
+                <ul>
+                    <li>Check the Processing Log for specific error messages</li>
+                    <li>Verify all sections sliced successfully</li>
+                    <li>Try reducing the number of transitions</li>
+                    <li>Check destination folder permissions</li>
+                </ul>
+            """
+        }
+    }

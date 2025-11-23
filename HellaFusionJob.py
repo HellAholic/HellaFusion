@@ -28,7 +28,8 @@ from cura.CuraApplication import CuraApplication
 from .HellaFusionLogic import HellaFusionLogic
 from .PluginConstants import PluginConstants
 from .HellaFusionExceptions import (ProfileSwitchError, BackendError)
-from .JobStateManager import JobStateManager, JobState
+from .JobStateManager import JobStateManager
+from .JobState import JobState
 from .ProfileSwitchingService import ProfileSwitchingService
 
 import time

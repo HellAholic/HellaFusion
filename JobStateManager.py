@@ -14,22 +14,12 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-from enum import Enum
 from threading import Lock
 from typing import Optional
 
 from UM.Logger import Logger
 from .HellaFusionExceptions import StateTransitionError
-
-
-class JobState(Enum):
-    """States for the HellaFusion job lifecycle."""
-    IDLE = "idle"
-    INITIALIZING = "initializing"
-    RUNNING = "running"
-    STOPPING = "stopping"
-    COMPLETED = "completed"
-    FAILED = "failed"
+from .JobState import JobState
 
 
 class JobStateManager:

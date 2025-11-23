@@ -21,8 +21,7 @@ from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                              QPushButton, QLineEdit, QTextEdit, QProgressBar,
                              QFileDialog, QSpinBox, QGroupBox, QGridLayout,
                              QComboBox, QSizePolicy, QWidget, QDoubleSpinBox,
-                             QMessageBox, QScrollArea, QTabWidget, QListWidget,
-                             QListWidgetItem, QSplitter)
+                             QMessageBox, QScrollArea, QTabWidget)
 from PyQt6.QtCore import pyqtSignal, Qt, QTimer
 from PyQt6.QtGui import QFont
 
@@ -34,121 +33,7 @@ from .HellaFusionExceptions import (HellaFusionException, ProfileSwitchError,
                                     BackendError, SlicingTimeoutError)
 from .PluginConstants import PluginConstants
 from .HellaFusionController import HellaFusionController
-
-
-class ProfileComboBox(QComboBox):
-    """Custom combo box for profile selection with grouped display."""
-    
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self._original_texts = {}
-        self.currentIndexChanged.connect(self._onSelectionChanged)
-        
-    def _onSelectionChanged(self, index):
-        """Handle selection change."""
-        if index >= 0:
-            self._updateSelectedItemDisplay()
-        
-    def setItemText(self, index, text):
-        """Override to store original text."""
-        self._original_texts[index] = text
-        super().setItemText(index, text)
-        
-    def addItem(self, text, userData=None):
-        """Override to store original text."""
-        index = self.count()
-        self._original_texts[index] = text
-        super().addItem(text, userData)
-        
-    def _updateSelectedItemDisplay(self):
-        """Update display."""
-        try:
-            current_index = self.currentIndex()
-            if current_index >= 0:
-                profile_data = self.itemData(current_index)
-                if profile_data and isinstance(profile_data, dict):
-                    quality_name = profile_data.get('quality_name', '')
-                    intent_display = profile_data.get('intent_display', '')
-                    is_user_defined = profile_data.get('is_user_defined', False)
-                    
-                    if is_user_defined:
-                        display_text = f"* {quality_name} - {intent_display}"
-                    else:
-                        display_text = f"{quality_name} - {intent_display}"
-                    
-                    self.currentIndexChanged.disconnect(self._onSelectionChanged)
-                    super().setItemText(current_index, display_text)
-                    self.update()
-                    self.currentIndexChanged.connect(self._onSelectionChanged)
-                    
-        except Exception as e:
-            Logger.log("w", f"Error updating combo box: {e}")
-
-
-class HelpDialog(QDialog):
-    """Help dialog with topic list and content display."""
-    
-    def __init__(self, help_topics, parent=None):
-        super().__init__(parent)
-        self.help_topics = help_topics
-        self.setWindowTitle("HellaFusion - Help")
-        self.setFixedSize(PluginConstants.DIALOG_MIN_WIDTH, PluginConstants.DIALOG_MIN_HEIGHT)
-        self.setStyleSheet(PluginConstants.DIALOG_BACKGROUND_STYLE)
-
-        layout = QVBoxLayout(self)
-        splitter = QSplitter(Qt.Orientation.Horizontal)
-
-        # Topic list on the left
-        self.topic_list_widget = QListWidget()
-        self.topic_list_widget.setMaximumWidth(220)
-        self.topic_list_widget.setStyleSheet(PluginConstants.HELP_PAGE_STYLE)
-
-        # Content display on the right
-        self.content_display_area = QTextEdit()
-        self.content_display_area.setReadOnly(True)
-        self.content_display_area.setStyleSheet(PluginConstants.HELP_PAGE_STYLE)
-
-        splitter.addWidget(self.topic_list_widget)
-        splitter.addWidget(self.content_display_area)
-        splitter.setSizes([135, 465])
-
-        layout.addWidget(splitter)
-
-        # Close button (right-aligned)
-        button_layout = QHBoxLayout()
-        button_layout.addStretch()
-        
-        close_button = QPushButton("Close")
-        close_button.setStyleSheet(PluginConstants.WARNING_BUTTON_STYLE)
-        close_button.clicked.connect(self.accept)
-        button_layout.addWidget(close_button)
-        
-        layout.addLayout(button_layout)
-
-        self._populate_topics()
-        self.topic_list_widget.currentItemChanged.connect(self._on_topic_selected)
-
-        # Select first topic (overview) by default
-        if self.topic_list_widget.count() > 0:
-            self.topic_list_widget.setCurrentRow(0)
-
-    def _populate_topics(self):
-        """Populate the topic list."""
-        # Order topics in a logical sequence
-        topic_order = ["overview", "transitions", "profiles", "slicing", "troubleshooting"]
-        
-        for topic_key in topic_order:
-            if topic_key in self.help_topics:
-                item = QListWidgetItem(self.help_topics[topic_key]["title"])
-                item.setData(Qt.ItemDataRole.UserRole, topic_key)
-                self.topic_list_widget.addItem(item)
-
-    def _on_topic_selected(self, current_item, previous_item):
-        """Handle topic selection."""
-        if current_item:
-            topic_key = current_item.data(Qt.ItemDataRole.UserRole)
-            if topic_key in self.help_topics:
-                self.content_display_area.setHtml(self.help_topics[topic_key]["content"])
+from .HelpDialog import HelpDialog
 
 
 class HellaFusionDialog(QDialog):
@@ -182,217 +67,7 @@ class HellaFusionDialog(QDialog):
         self._calculation_invalid = False  # Track if calculations need to be refreshed
         
         # Help content
-        self.help_content = {
-            "overview": {
-                "title": "Overview",
-                "content": """
-                    <h2>🔥 HellaFusion - Advanced Multi-Quality Printing</h2>
-                    <p><b>Revolutionary 3D printing technology</b> that enables <b>dynamic quality switching</b> within a single print job. Print different sections of your model with completely different quality profiles!</p>
-                    
-                    <h3>🚀 Perfect For:</h3>
-                    <ul>
-                        <li><b>Speed + Quality Fusion:</b> Draft mode for hidden sections, fine detail where it matters</li>
-                        <li><b>Structural Optimization:</b> Heavy infill for bases, lightweight for tops</li>
-                        <li><b>Material Efficiency:</b> Balance strength, speed, and material usage intelligently</li>
-                        <li><b>Advanced Prototyping:</b> Test multiple quality settings in a single print</li>
-                        <li><b>Complex Geometries:</b> Adapt quality to each section's requirements</li>
-                    </ul>
-                    
-                    <h3>⚡ Advanced Fusion Technology:</h3>
-                    <p>HellaFusion uses intelligent algorithms to slice your model multiple times with different quality profiles, then <b>seamlessly fuses</b> the gcode sections with:</p>
-                    <ul>
-                        <li><b>Smart Layer Alignment:</b> Automatic initial layer height adjustments</li>
-                        <li><b>Perfect Transitions:</b> Seamless quality switches at optimal points</li>
-                        <li><b>Intelligent Analysis:</b> Real-time calculation of optimal fusion parameters</li>
-                    </ul>
-                    
-                    <p><b>📍 Important:</b> The same model on your build plate is used for all sections - only the slicing settings change to create the fusion effect.</p>
-                """
-            },
-            "transitions": {
-                "title": "Setting Up Transitions",
-                "content": """
-                    <h2>🎯 Mastering Fusion Transitions</h2>
-                    <p><b>Transitions are fusion points</b> where HellaFusion switches from one quality profile to another. Each section between transitions uses a completely different quality profile for optimal results.</p>
-                    
-                    <h3>🔄 How Fusion Transitions Work:</h3>
-                    <ul>
-                        <li><b>Section 1:</b> Z=0mm → First transition (uses Profile A)</li>
-                        <li><b>Fusion Point:</b> Seamless quality switch at Z=X mm</li>
-                        <li><b>Section 2:</b> Z=X mm → Next transition (uses Profile B)</li>
-                        <li><b>Unlimited Sections:</b> Add as many fusion points as needed!</li>
-                    </ul>
-                    
-                    <h3>🧠 Pro Fusion Strategies:</h3>
-                    <ul>
-                        <li><b>🏗️ Structural Transitions:</b> Plan fusion points at model features - between flat sections, after support structures</li>
-                        <li><b>🎨 Visual Optimization:</b> Avoid mid-feature transitions - never fuse in the middle of thin walls or critical details</li>
-                        <li><b>⚡ Smart Alignment:</b> HellaFusion automatically aligns to optimal layer boundaries for seamless fusion</li>
-                        <li><b>📏 Height Logic:</b> Transitions must be in ascending Z-height order for proper fusion sequencing</li>
-                    </ul>
-                    
-                    <h3>🛠️ Fusion Control Panel:</h3>
-                    <ul>
-                        <li><b>➕ Add Transition:</b> Creates new fusion point and next section</li>
-                        <li><b>➖ Remove Last Transition:</b> Removes most recent fusion point</li>
-                        <li><b>✅ Smart Validation:</b> Real-time checks ensure proper fusion order and model compatibility</li>
-                        <li><b>🧮 Calculate Transitions:</b> Advanced analysis for optimal fusion parameters</li>
-                    </ul>
-                """
-            },
-            "profiles": {
-                "title": "Quality Profiles",
-                "content": """
-                    <h2>🎨 Quality Profile Fusion</h2>
-                    <p>Each section can use a <b>completely different quality profile</b> from your Cura configuration. This is where <b>HellaFusion's true power</b> is unleashed!</p>
-                    
-                    <h3>🏷️ Available Profile Categories:</h3>
-                    <p>HellaFusion automatically detects all profiles compatible with your current printer and material setup:</p>
-                    <ul>
-                        <li><b>🔧 Default Profiles:</b> Standard quality options (Draft, Normal, Fine, Ultra Fine)</li>
-                        <li><b>⚙️ Engineering Profiles:</b> Optimized for strength, durability, and mechanical properties</li>
-                        <li><b>✨ Visual Profiles:</b> Perfect surface quality and aesthetic finish</li>
-                        <li><b>🎯 Custom Profiles:</b> Your personalized profiles (marked with ⭐)</li>
-                    </ul>
-                    
-                    <h3>🔄 Smart Profile Management:</h3>
-                    <p><b>Reload Profiles Button</b> - Use when you:</p>
-                    <ul>
-                        <li>🖨️ Switch printer configurations in Cura</li>
-                        <li>🧵 Change materials or nozzle sizes</li>
-                        <li>➕ Create or modify custom quality profiles</li>
-                        <li>🔧 Update printer firmware or settings</li>
-                    </ul>
-                    <p><b>Smart Refresh:</b> Updates available profiles without losing your current section selections!</p>
-                    
-                    <h3>🧠 Pro Fusion Tips:</h3>
-                    <ul>
-                        <li><b>⚡ Layer Height Harmony:</b> Similar layer heights between sections create smoother transitions</li>
-                        <li><b>🏃 Speed Consistency:</b> Moderate speed changes prevent extrusion artifacts at fusion points</li>
-                        <li><b>🧪 Test First:</b> Experiment with profile combinations on small test models</li>
-                        <li><b>🎯 Strategic Selection:</b> Match profile characteristics to each section's requirements</li>
-                    </ul>
-                """
-            },
-            "slicing": {
-                "title": "Slicing Process",
-                "content": """
-                    <h2>How the Slicing Process Works</h2>
-                    <p>The plugin uses a two-step process for optimal layer alignment between sections:</p>
-                    
-                    <h3>Step 1: Calculate Transitions (Recommended)</h3>
-                    <p>Click the <b>"Calculate Transitions"</b> button (orange) before slicing to:</p>
-                    <ul>
-                        <li><b>Analyze layer alignment:</b> Checks where layers will actually end for each section</li>
-                        <li><b>Calculate adjustments:</b> Determines optimal initial layer height for each section to align with the previous section's layers</li>
-                        <li><b>Minimize gaps:</b> Chooses whether to align above or below to minimize adjustments</li>
-                        <li><b>Display preview:</b> Shows Z-ranges, layer heights, and proposed adjustments</li>
-                    </ul>
-                    <p><b>Why calculate first?</b> Different profiles have different layer heights. Without adjustment, layers may not align at transitions, causing gaps or overlaps.</p>
-                    <p><b>Warnings:</b> The calculator will warn you if:</p>
-                    <ul>
-                        <li><b>Adaptive Layer Height</b> is enabled (may conflict with adjustments)</li>
-                        <li><b>Tree Support</b> is enabled (non-deterministic between slices, can cause floating support)</li>
-                    </ul>
-                    
-                    <h3>Step 2: Start Fusing</h3>
-                    <p>Click <b>"Start Fusing"</b> to perform the actual fusing:</p>
-
-                    <h4>2a. Model Detection</h4>
-                    <p>The plugin detects the model currently on your build plate.</p>
-                    
-                    <h4>2b. Profile Switching and Slicing</h4>
-                    <p>For each section:</p>
-                    <ol>
-                        <li>Switches to the selected quality profile</li>
-                        <li><b>Applies initial layer height adjustment</b> (if calculated and needed) to align layers</li>
-                        <li>Waits for Cura to slice the model</li>
-                        <li>Saves the gcode to a temporary file</li>
-                        <li>Records actual layer heights achieved</li>
-                    </ol>
-                    <p><b>Note:</b> Section 1 is never adjusted (it's the build plate adhesion layer). Each subsequent section is adjusted to align with where the previous section actually ended.</p>
-                    
-                    <h4>2c. Gcode Extraction</h4>
-                    <p>The plugin extracts the relevant Z-height ranges from each gcode file:</p>
-                    <ul>
-                        <li>Parses gcode to track Z position</li>
-                        <li>Identifies layer boundaries based on actual layer heights</li>
-                        <li>Extracts only layers within each section's range</li>
-                        <li>Transitions always occur at layer boundaries (never mid-layer)</li>
-                    </ul>
-                    
-                    <h4>2d. Intelligent Combining</h4>
-                    <p>Combines the sections into one file:</p>
-                    <ul>
-                        <li>Uses startup gcode from Section 1</li>
-                        <li>Fuses sections at exact layer boundaries</li>
-                        <li>Maintains E (extrusion) continuity across sections</li>
-                        <li>Uses shutdown gcode from the final section</li>
-                    </ul>
-                    
-                    <h4>2e. Output</h4>
-                    <p>Final gcode is saved to your destination folder with a timestamp. Temporary files are automatically cleaned up.</p>
-                    
-                    <h3>Manual vs Auto-Calculate:</h3>
-                    <ul>
-                        <li><b>Click Calculate first (Recommended):</b> Preview adjustments before slicing</li>
-                        <li><b>Skip Calculate:</b> Plugin auto-calculates when you click Start Fusing</li>
-                    </ul>
-                    
-                    <h3>Timeout Setting:</h3>
-                    <p>The <b>Slice Timeout</b> (default 300s) prevents infinite waiting if slicing fails. Increase for complex models.</p>
-                """
-            },
-            "troubleshooting": {
-                "title": "Troubleshooting",
-                "content": """
-                    <h2>Common Issues and Solutions</h2>
-                    <h3>Slicing Timeout</h3>
-                    <p><b>Problem:</b> "Slicing timeout" error appears</p>
-                    <p><b>Solutions:</b></p>
-                    <ul>
-                        <li>Increase the Slice Timeout value in Configuration</li>
-                        <li>Simplify your model (reduce polygon count)</li>
-                        <li>Check if Cura is responsive (not frozen)</li>
-                        <li>Try slicing manually in Cura first to verify the model and settings work</li>
-                    </ul>
-                    <h3>Transition Height Validation Errors</h3>
-                    <p><b>Problem:</b> "Transition heights must be in ascending order" error</p>
-                    <p><b>Solutions:</b></p>
-                    <ul>
-                        <li>Check that each transition height is greater than the previous one</li>
-                        <li>Remove and re-add transitions in the correct order</li>
-                        <li>Ensure transition heights are less than your model height</li>
-                    </ul>
-                    <h3>Quality Profile Issues</h3>
-                    <p><b>Problem:</b> Expected profiles not showing in dropdowns</p>
-                    <p><b>Solutions:</b></p>
-                    <ul>
-                        <li>Click "Reload Profiles from Cura" button</li>
-                        <li>Verify the profile exists for your current printer and material in Cura's normal slicing view</li>
-                        <li>Check that your printer definition supports the profile</li>
-                    </ul>
-                    <h3>Visual Artifacts at Transitions</h3>
-                    <p><b>Problem:</b> Visible lines or imperfections where sections meet</p>
-                    <p><b>Solutions:</b></p>
-                    <ul>
-                        <li>Use profiles with similar layer heights to minimize Z-seam visibility</li>
-                        <li>Position transitions at model features (edges, flat surfaces) where they're less noticeable</li>
-                        <li>Ensure both profiles use compatible print speeds and temperatures</li>
-                        <li>Consider adding a small transition buffer in your model design</li>
-                    </ul>
-                    <h3>Processing Failed During Combining</h3>
-                    <p><b>Problem:</b> Error occurs during the combining step</p>
-                    <p><b>Solutions:</b></p>
-                    <ul>
-                        <li>Check the Processing Log for specific error messages</li>
-                        <li>Verify all sections sliced successfully</li>
-                        <li>Try reducing the number of transitions</li>
-                        <li>Check destination folder permissions</li>
-                    </ul>
-                """
-            }
-        }
+        self.help_content = PluginConstants.HELP_CONTENT
         
         # Flag to prevent saving during initialization
         self._is_loading = True
@@ -405,6 +80,9 @@ class HellaFusionDialog(QDialog):
         
         # Connect existing UI elements to invalidation handlers
         self._connectInvalidationHandlers()
+        
+        # Initial update of button state (check if models are on build plate)
+        self._updateModelInfo()
         
         # Enable saving now that initialization is complete
         self._is_loading = False
@@ -659,7 +337,7 @@ class HellaFusionDialog(QDialog):
         section_layout.addWidget(section_label)
         
         # Profile selector
-        profile_combo = ProfileComboBox()
+        profile_combo = QComboBox()
         profile_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         profile_combo.setStyleSheet(PluginConstants.COMBOBOX_STYLE)
         profile_combo.currentIndexChanged.connect(self._onProfileSelectionChanged)
@@ -983,10 +661,11 @@ class HellaFusionDialog(QDialog):
                 if not container:
                     continue
                 
+                # Display format: "Quality Name - Intent" (with * for user-defined)
                 if profile_entry.get('is_user_defined', False):
-                    display_text = f"  * {quality_name}"
+                    display_text = f"  * {quality_name} - {intent_display}"
                 else:
-                    display_text = f"  {quality_name}"
+                    display_text = f"  {quality_name} - {intent_display}"
                 
                 container_id = container.getId()
                 profile_data = {
@@ -1027,7 +706,9 @@ class HellaFusionDialog(QDialog):
             ]
             
             # Check if we have actual printable models
-            if sliceable_nodes:
+            has_models = len(sliceable_nodes) > 0
+            
+            if has_models:
                 # Use project name if available, otherwise count objects
                 if job_name and job_name.strip():
                     self._model_info_label.setText(f"✓ {job_name}")
@@ -1049,8 +730,44 @@ class HellaFusionDialog(QDialog):
                 # No sliceable objects found
                 self._model_info_label.setText("⚠ No model on build plate - Please load a model first")
                 self._model_info_label.setStyleSheet(PluginConstants.LABEL_STYLE_WARNING)
+            
+            # Update Start Fusing button state based on model presence
+            self._updateStartButtonState(has_models)
+            
         except Exception as e:
             Logger.log("w", f"Error updating model info: {e}")
+    
+    def _updateStartButtonState(self, has_models: bool = None):
+        """Update the Start Fusing button enabled state based on build plate status.
+        
+        Args:
+            has_models: Optional bool indicating if models are present. If None, will check.
+        """
+        try:
+            # Check if models are on build plate if not provided
+            if has_models is None:
+                application = CuraApplication.getInstance()
+                scene = application.getController().getScene()
+                sliceable_nodes = [
+                    node for node in DepthFirstIterator(scene.getRoot()) 
+                    if node.callDecoration("isSliceable") and node.getMeshData()
+                ]
+                has_models = len(sliceable_nodes) > 0
+            
+            # Enable button only if models are present and not currently processing
+            should_enable = has_models and not self._is_processing
+            self._start_btn.setEnabled(should_enable)
+            
+            # Update tooltip to explain why button is disabled
+            if not has_models:
+                self._start_btn.setToolTip("Please add a model to the build plate before starting")
+            elif self._is_processing:
+                self._start_btn.setToolTip("Processing in progress...")
+            else:
+                self._start_btn.setToolTip("Start the gcode fusion process")
+                
+        except Exception as e:
+            Logger.log("w", f"Error updating start button state: {e}")
             self._model_info_label.setText("Error detecting model")
             self._model_info_label.setStyleSheet(PluginConstants.LABEL_STYLE_ERROR)
     
@@ -1209,7 +926,8 @@ class HellaFusionDialog(QDialog):
         self._is_processing = is_processing
         
         # Update button states
-        self._start_btn.setEnabled(not is_processing)
+        # Use _updateStartButtonState to check both processing state and model presence
+        self._updateStartButtonState()
         self._stop_btn.setEnabled(is_processing)
         
         # Update input states

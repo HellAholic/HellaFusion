@@ -19,6 +19,9 @@ import re
 from UM.Logger import Logger
 from cura.CuraApplication import CuraApplication
 
+from .DisplayCommandService import DisplayCommandService
+from .GCodeHeaderService import GCodeHeaderService
+from .GCodeParserService import GCodeParserService
 from .HellaFusionExceptions import FileProcessingError
 from .PluginConstants import PluginConstants
 from .TransitionData import TransitionData
@@ -29,6 +32,9 @@ class HellaFusionLogic:
     
     def __init__(self):
         self._retraction_enabled = True
+        self._display_command_service = DisplayCommandService()
+        self._header_service = GCodeHeaderService()
+        self._parser_service = GCodeParserService()
         self._retraction_retract_speed = 2100
         self._retraction_prime_speed = 2100
         self._relative_extrusion = False
@@ -197,11 +203,7 @@ class HellaFusionLogic:
         return result
     
     def combineGcodeFiles(self, sections_data: list, output_path: str, calculated_transitions: list = None) -> bool:
-        """Combine multiple gcode files into a single spliced file using TransitionData (PHASE 3).
-        
-        PHASE 3 REFACTORING: This method now REQUIRES TransitionData objects from TransitionCalculator.
-        No more searching for alignment points or fallback logic - TransitionCalculator is the
-        single source of truth for all transition boundaries.
+        """Combine multiple gcode files into a single spliced file using TransitionData
         
         Args:
             sections_data: List of dicts with 'section_number', 'gcode_file', 'start_height', 'end_height'
@@ -241,7 +243,7 @@ class HellaFusionLogic:
             skipped_sections = []
             
             for section_info in sections_data:
-                gcode_lines = self._readGcodeFile(section_info['gcode_file'])
+                gcode_lines = self._parser_service.readGcodeFile(section_info['gcode_file'])
                 if not gcode_lines:
                     Logger.log("e", f"Cannot read G-code file for section {section_info['section_number']}: {section_info['gcode_file']}")
                     Logger.log("e", "Please ensure the slicing process completed successfully and the file exists.")
@@ -308,16 +310,7 @@ class HellaFusionLogic:
             Logger.log("e", f"Error combining gcode files: {str(e)}")
             raise FileProcessingError(f"Failed to combine gcode files: {str(e)}", operation="combining gcode")
     
-    def _readGcodeFile(self, file_path: str) -> list:
-        """Read a gcode file and return lines as a list."""
-        try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                lines = f.readlines()
-            return lines
-        except Exception as e:
-            Logger.log("e", f"Error reading gcode file {file_path}: {str(e)}")
-            return []
-    
+
     def _extractSectionData(self, gcode_lines: list, section_number: int, start_height: float, end_height: float, layer_height: float = 0.2, retraction_settings: dict = None, adjusted_initial: float = None, original_initial: float = None) -> dict:
         """Extract section data from a specific Z height range.
         
@@ -426,12 +419,12 @@ class HellaFusionLogic:
                 if not past_startup:
                     # Still in startup - track X, Y, E but NOT Z!
                     # (Z during startup is for homing/clearance, not printing)
-                    if ' X' in line_stripped and self._getValue(line_stripped, 'X') is not None:
-                        current_x = self._getValue(line_stripped, 'X')
-                    if ' Y' in line_stripped and self._getValue(line_stripped, 'Y') is not None:
-                        current_y = self._getValue(line_stripped, 'Y')
-                    if ' E' in line_stripped and self._getValue(line_stripped, 'E') is not None:
-                        current_e = self._getValue(line_stripped, 'E')
+                    if ' X' in line_stripped and self._parser_service.getValue(line_stripped, 'X') is not None:
+                        current_x = self._parser_service.getValue(line_stripped, 'X')
+                    if ' Y' in line_stripped and self._parser_service.getValue(line_stripped, 'Y') is not None:
+                        current_y = self._parser_service.getValue(line_stripped, 'Y')
+                    if ' E' in line_stripped and self._parser_service.getValue(line_stripped, 'E') is not None:
+                        current_e = self._parser_service.getValue(line_stripped, 'E')
                     
                     # For Section 1 ONLY, collect startup commands
                     if section_number == 1 and start_height == 0:
@@ -440,8 +433,8 @@ class HellaFusionLogic:
                     continue  # Skip to next line
                 
                 # Track position changes
-                if ' Z' in line_stripped and self._getValue(line_stripped, 'Z') is not None:
-                    new_z = self._getValue(line_stripped, 'Z')
+                if ' Z' in line_stripped and self._parser_service.getValue(line_stripped, 'Z') is not None:
+                    new_z = self._parser_service.getValue(line_stripped, 'Z')
                     prev_z = current_z
                     current_z = new_z
                     # Buffer this Z move - we may need to include it when starting a section
@@ -452,14 +445,14 @@ class HellaFusionLogic:
                         if min_z_in_layer is None or new_z < min_z_in_layer:
                             min_z_in_layer = new_z
                 
-                if ' X' in line_stripped and self._getValue(line_stripped, 'X') is not None:
-                    current_x = self._getValue(line_stripped, 'X')
-                if ' Y' in line_stripped and self._getValue(line_stripped, 'Y') is not None:
-                    current_y = self._getValue(line_stripped, 'Y')
+                if ' X' in line_stripped and self._parser_service.getValue(line_stripped, 'X') is not None:
+                    current_x = self._parser_service.getValue(line_stripped, 'X')
+                if ' Y' in line_stripped and self._parser_service.getValue(line_stripped, 'Y') is not None:
+                    current_y = self._parser_service.getValue(line_stripped, 'Y')
                 
                 # Track E and retraction state
-                if ' E' in line_stripped and self._getValue(line_stripped, 'E') is not None:
-                    e_val = self._getValue(line_stripped, 'E')
+                if ' E' in line_stripped and self._parser_service.getValue(line_stripped, 'E') is not None:
+                    e_val = self._parser_service.getValue(line_stripped, 'E')
                     if self._relative_extrusion:
                         if e_val < 0:
                             is_retracted = True
@@ -471,12 +464,6 @@ class HellaFusionLogic:
                         elif e_val > current_e:
                             is_retracted = False
                         current_e = e_val
-                
-                # PHASE 3 FIX: Extract ENTIRE temp file, don't pre-trim!
-                # The temp file contains the full model sliced with one profile.
-                # We'll trim to exact boundaries later in _trimSectionToZ using TransitionData.
-                # Double-trimming was causing empty sections because pre-trimming removed
-                # the layers that _trimSectionToZ was looking for.
                 
                 # Start extraction after startup (after first ;LAYER: marker)
                 if not in_section and past_startup and ';LAYER:' in line_stripped:
@@ -515,9 +502,9 @@ class HellaFusionLogic:
         by TransitionCalculator. We MUST use TransitionData's adjusted_initial_layer_height and 
         layer_height to calculate which layer numbers exist in THIS section's temp file.
         
-        Per plan of action: "Calculate start layer number and end layer number of each section 
+        Calculate start layer number and end layer number of each section 
         based on the transition heights of that section, its initial layer height that has been 
-        calculated and its layer height."
+        calculated and its layer height.
         
         Args:
             section: Section data dict with gcode_lines
@@ -669,6 +656,7 @@ class HellaFusionLogic:
             'is_retracted_at_start': section['is_retracted_at_start'],
             'is_retracted_at_end': section['is_retracted_at_end'],
             'profile_retraction_settings': section.get('profile_retraction_settings'),
+            'reference_layer_time': section.get('reference_layer_time'),  # Preserve TIME_ELAPSED from reference layer for time delta calculation!
             'gcode_lines': trimmed_lines
         }
         
@@ -843,15 +831,21 @@ class HellaFusionLogic:
                 break
         
         if target_layer_num is None or target_layer_num == 0:
-            return section
+            Logger.log("w", f"Could not find target layer at Z={target_z:.3f}mm for reference time extraction")
+            # Still try to extract reference time from first available layer
+            if layer_z_map:
+                # Use the first layer as fallback
+                target_layer_num = min(layer_z_map.keys())
+            else:
+                return section
         
-        # We want XYE values from the END of this layer (where the layer finishes before the next layer starts)
-        # This is the layer that will be trimmed away, so we use its END position for the transition
-        # However, if this layer has no extrusion (empty layer with only travels), look at previous layer
+        # We want XYE values AND TIME_ELAPSED from the END of the reference layer
+        # Extract both in a single pass through the G-code
         prev_layer_num = target_layer_num
         prev_layer_x = None
         prev_layer_y = None
         prev_layer_e = None
+        reference_layer_time = None
         in_prev_layer = False
         
         for line in section['gcode_lines']:  # Scan the current gcode_lines
@@ -868,23 +862,33 @@ class HellaFusionLogic:
                         # Reached next layer after our target, stop scanning
                         break
             
-            # Collect LAST XYE from previous layer
-            if in_prev_layer and line_stripped.startswith(('G0', 'G1')):
-                match_x = re.search(r' X(\d+\.?\d*)', line_stripped)
-                match_y = re.search(r' Y(\d+\.?\d*)', line_stripped)
-                match_e = re.search(r' E(-?\d+\.?\d*)', line_stripped)
+            # While in the reference layer, collect LAST XYE and TIME_ELAPSED
+            if in_prev_layer:
+                # Collect XYE from G0/G1 commands
+                if line_stripped.startswith(('G0', 'G1')):
+                    match_x = re.search(r' X(\d+\.?\d*)', line_stripped)
+                    match_y = re.search(r' Y(\d+\.?\d*)', line_stripped)
+                    match_e = re.search(r' E(-?\d+\.?\d*)', line_stripped)
+                    
+                    if match_x:
+                        prev_layer_x = float(match_x.group(1))
+                    if match_y:
+                        prev_layer_y = float(match_y.group(1))
+                    if match_e:
+                        prev_layer_e = float(match_e.group(1))
                 
-                if match_x:
-                    prev_layer_x = float(match_x.group(1))
-                if match_y:
-                    prev_layer_y = float(match_y.group(1))
-                if match_e:
-                    prev_layer_e = float(match_e.group(1))
+                # Collect TIME_ELAPSED (keep last one found in layer)
+                elif line_stripped.startswith(';TIME_ELAPSED:'):
+                    try:
+                        reference_layer_time = float(line_stripped.split(':')[1])
+                    except (ValueError, IndexError):
+                        pass
         
         # If we didn't find an E value (empty layer with only travel moves), look at the previous layer
         if prev_layer_e is None and prev_layer_num > 0:
             prev_layer_num = prev_layer_num - 1
             in_prev_layer = False
+            reference_layer_time = None  # Reset time, need to extract from the fallback layer
             
             for line in section['gcode_lines']:
                 line_stripped = line.strip()
@@ -898,17 +902,32 @@ class HellaFusionLogic:
                         elif in_prev_layer and layer_num > prev_layer_num:
                             break
                 
-                if in_prev_layer and line_stripped.startswith(('G0', 'G1')):
-                    match_x = re.search(r' X(\d+\.?\d*)', line_stripped)
-                    match_y = re.search(r' Y(\d+\.?\d*)', line_stripped)
-                    match_e = re.search(r' E(-?\d+\.?\d*)', line_stripped)
+                if in_prev_layer:
+                    # Collect XYE
+                    if line_stripped.startswith(('G0', 'G1')):
+                        match_x = re.search(r' X(\d+\.?\d*)', line_stripped)
+                        match_y = re.search(r' Y(\d+\.?\d*)', line_stripped)
+                        match_e = re.search(r' E(-?\d+\.?\d*)', line_stripped)
+                        
+                        if match_x:
+                            prev_layer_x = float(match_x.group(1))
+                        if match_y:
+                            prev_layer_y = float(match_y.group(1))
+                        if match_e:
+                            prev_layer_e = float(match_e.group(1))
                     
-                    if match_x:
-                        prev_layer_x = float(match_x.group(1))
-                    if match_y:
-                        prev_layer_y = float(match_y.group(1))
-                    if match_e:
-                        prev_layer_e = float(match_e.group(1))
+                    # Collect TIME_ELAPSED
+                    elif line_stripped.startswith(';TIME_ELAPSED:'):
+                        try:
+                            reference_layer_time = float(line_stripped.split(':')[1])
+                        except (ValueError, IndexError):
+                            pass
+        
+        # Store reference layer time for time adjustment algorithm
+        if reference_layer_time is not None:
+            section['reference_layer_time'] = reference_layer_time
+        else:
+            Logger.log("w", f"Section {section.get('section_number', '?')}: Could not extract reference layer time from layer {prev_layer_num} at target_z={target_z:.3f}mm")
         
         # Update start_position
         if prev_layer_x is not None:
@@ -920,12 +939,8 @@ class HellaFusionLogic:
         
         return section
     
-    # PHASE 3: _findAlignmentPoint() method REMOVED (~150 lines)
-    # No longer needed - TransitionCalculator provides exact boundaries via TransitionData.
-    # This eliminates all Z-coordinate searching and fallback logic!
-    
     def _combineSections(self, sections: list, first_gcode_file: str = None, calculated_transitions: list = None) -> list:
-        """PHASE 3: Combine sections using TransitionData objects (single source of truth).
+        """Combine sections using TransitionData objects.
         
         This method extracts TransitionData objects from calculated_transitions and uses
         their pre-calculated boundaries directly. No more searching, no fallbacks.
@@ -950,7 +965,7 @@ class HellaFusionLogic:
             
             # Add header from first file ONLY
             if first_gcode_file:
-                first_gcode = self._readGcodeFile(first_gcode_file)
+                first_gcode = self._parser_service.readGcodeFile(first_gcode_file)
                 if first_gcode:
                     in_header = False
                     for line in first_gcode:
@@ -972,9 +987,7 @@ class HellaFusionLogic:
                 end_str = f"Z{section['end_z']:.2f}mm" if section['end_z'] else "Top"
                 combined.append(f";Section {section['section_number']}: Z{section['start_z']:.2f}mm - {end_str}\n")
             combined.append(";=========================================\n\n")
-            
-            # STEP 1: PHASE 3 - Extract TransitionData objects and use pre-calculated boundaries
-            # No more searching or fallbacks - TransitionCalculator already did all the work!
+
             alignment_points = []
             transition_data_objects = []
             
@@ -982,7 +995,7 @@ class HellaFusionLogic:
             for i, section_dict in enumerate(calculated_transitions):
                 td = section_dict.get('_transition_data')
                 if td is None:
-                    raise ValueError(f"Section {i}: Missing _transition_data object. Phase 3 requires TransitionData from TransitionCalculator.")
+                    raise ValueError(f"Section {i}: Missing _transition_data object.")
                 if not isinstance(td, TransitionData):
                     raise ValueError(f"Section {i}: _transition_data is not a TransitionData object (got {type(td)})")
                 transition_data_objects.append(td)
@@ -1001,8 +1014,7 @@ class HellaFusionLogic:
                 
                 alignment_points.append((i, end_z_a, start_z_b))
             
-            # STEP 2: Build trimming boundaries for each section using TransitionData
-            # CRITICAL FIX: Use actual_start_z/actual_end_z from TransitionData (calculated boundaries)
+            # Use actual_start_z/actual_end_z from TransitionData (calculated boundaries)
             # NOT user-specified boundaries! Each section must be trimmed based on ITS OWN parameters.
             trim_boundaries = {}
             for i in range(len(sections)):
@@ -1016,14 +1028,14 @@ class HellaFusionLogic:
                     'transition_data': td  # Pass TransitionData object for layer calculations
                 }
             
-            # STEP 3: For sections 2+, extract XYE values from previous layer BEFORE trimming
+            # For sections 2+, extract XYE values from previous layer BEFORE trimming
             # The previous layer is still in the original section at this point
             for i in range(1, len(sections)):
                 start_z_for_this_section = trim_boundaries[i]['min_z']
                 if start_z_for_this_section is not None:
                     sections[i] = self._extractPreviousLayerValues(sections[i], start_z_for_this_section)
             
-            # STEP 4: Now do the actual trimming - ONCE per section with TransitionData
+            # Now do the actual trimming - ONCE per section with TransitionData
             for i in range(len(sections)):
                 td = trim_boundaries[i]['transition_data']
                 min_z = trim_boundaries[i]['min_z']
@@ -1043,8 +1055,43 @@ class HellaFusionLogic:
                         layer_count += 1
                 total_layers += layer_count
             
-            # Add sections with transitions and renumbered layers
-            cumulative_time = 0.0  # Track total elapsed time across all sections
+            # Calculate time deltas for each section transition
+            # Section 1 has no delta (time_delta = 0.0)
+            # For sections 2+: delta = (ADJUSTED last TIME_ELAPSED of prev section) - (reference_layer_time of current section)
+            # CRITICAL: We must use the ADJUSTED end time from previous section, not the original unadjusted time!
+            sections[0]['time_delta'] = 0.0  # First section keeps original times
+            
+            for i in range(1, len(sections)):
+                # Find last TIME_ELAPSED from previous section (UNADJUSTED)
+                prev_section_last_time_unadjusted = None
+                for line in reversed(sections[i-1]['gcode_lines']):
+                    if line.strip().startswith(';TIME_ELAPSED:'):
+                        try:
+                            prev_section_last_time_unadjusted = float(line.strip().split(':')[1])
+                            break
+                        except (ValueError, IndexError):
+                            pass
+                
+                # Calculate the ADJUSTED end time of previous section
+                # Adjusted time = original time + previous section's delta
+                prev_section_delta = sections[i-1].get('time_delta', 0.0)
+                baseline_time_section_a = None
+                if prev_section_last_time_unadjusted is not None:
+                    baseline_time_section_a = prev_section_last_time_unadjusted + prev_section_delta
+                
+                # Get reference layer time from current section
+                baseline_time_section_b = sections[i].get('reference_layer_time', None)
+                
+                # Calculate delta
+                if baseline_time_section_a is not None and baseline_time_section_b is not None:
+                    time_delta = baseline_time_section_a - baseline_time_section_b
+                    sections[i]['time_delta'] = time_delta
+                elif baseline_time_section_a is None:
+                    sections[i]['time_delta'] = 0.0
+                    Logger.log("e", f"Section {sections[i]['section_number']}: Could not find baseline time from previous section - using delta=0")
+                else:  # baseline_time_section_b is None
+                    sections[i]['time_delta'] = 0.0
+                    Logger.log("e", f"Section {sections[i]['section_number']}: Missing reference_layer_time - using delta=0 (THIS IS WRONG!)")
             
             # No need to set start states - each section has definitive start/end states from profile settings
             
@@ -1060,7 +1107,8 @@ class HellaFusionLogic:
                 # Section 1: Includes startup + printing (already in gcode_lines)
                 # Sections 2+: Just printing (startup was skipped by _extractSectionData)
                 first_move_in_section = True  # Track if this is the first move command
-                section_start_time = None  # Track when this section starts (first TIME_ELAPSED)
+                time_delta = section.get('time_delta', 0.0)  # Get pre-calculated time delta for this section
+                time_adjusted_count = 0  # Count how many times we adjust
                 
                 for line in section['gcode_lines']:
                     line_stripped = line.strip()
@@ -1076,20 +1124,18 @@ class HellaFusionLogic:
                         current_layer += 1
                         continue
                     
-                    # Update TIME_ELAPSED comments
+                    # Update TIME_ELAPSED comments using pre-calculated delta
                     if line_stripped.startswith(';TIME_ELAPSED:'):
                         try:
                             original_time = float(line_stripped.split(':')[1])
-                            # First time marker in section - record section start time
-                            if section_start_time is None:
-                                section_start_time = original_time
-                            # Calculate section-relative time and add to cumulative
-                            section_relative_time = original_time - section_start_time
-                            adjusted_time = cumulative_time + section_relative_time
+                            # Apply the time delta to adjust for section transitions
+                            adjusted_time = original_time + time_delta
                             combined.append(f";TIME_ELAPSED:{adjusted_time:.6f}\n")
+                            time_adjusted_count += 1
                             continue
                         except (ValueError, IndexError):
                             # If parsing fails, keep original line
+                            Logger.log("w", f"Failed to parse TIME_ELAPSED: {line_stripped}")
                             pass
                     
                     # For sections 2+, DON'T strip Z - the extracted section includes the Z move for proper positioning
@@ -1103,20 +1149,13 @@ class HellaFusionLogic:
                     # Copy all other lines as-is
                     combined.append(line if line.endswith('\n') else line + '\n')
                 
-                # Update cumulative time for next section
-                # Find the last TIME_ELAPSED in this section
-                for line in reversed(section['gcode_lines']):
-                    if line.strip().startswith(';TIME_ELAPSED:'):
-                        try:
-                            last_time = float(line.strip().split(':')[1])
-                            if section_start_time is not None:
-                                section_duration = last_time - section_start_time
-                                cumulative_time += section_duration
-                        except (ValueError, IndexError):
-                            pass
-                        break
-                
                 combined.append(f";========== SECTION {section['section_number']} END ==========\n\n")
+            
+            # Update header TIME value to match final TIME_ELAPSED
+            combined = self._header_service.updateHeaderTime(combined)
+            
+            # Update M117/M118 LCD display commands (if present)
+            combined = self._display_command_service.updateDisplayCommands(combined)
             
             return combined
             
@@ -1124,6 +1163,8 @@ class HellaFusionLogic:
             Logger.log("e", f"Error combining sections: {str(e)}")
             return []
     
+
+
     def _shouldPrimeForTransition(self, prev_section: dict, next_section: dict, calculated_transitions: list = None) -> dict:
         """Determine if priming/retracting is needed for the transition based on filament state.
         
@@ -1575,18 +1616,3 @@ class HellaFusionLogic:
         
         return transition
     
-    def _getValue(self, line: str, key: str) -> float:
-        """Extract a numeric value for a given key from a gcode line."""
-        try:
-            # Handle comments
-            if ';' in line:
-                line = line.split(';')[0]
-            
-            # Look for the key followed by a number
-            pattern = f"{key}(-?\\d+\\.?\\d*)"
-            match = re.search(pattern, line)
-            if match:
-                return float(match.group(1))
-            return None
-        except:
-            return None
