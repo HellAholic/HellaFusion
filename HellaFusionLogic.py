@@ -64,8 +64,8 @@ class HellaFusionLogic:
                     self._retraction_prime_speed = extruders[0].getProperty("retraction_prime_speed", "value") * 60
                     self._retraction_amount = extruders[0].getProperty("retraction_amount", "value")
                     self._relative_extrusion = global_stack.getProperty("relative_extrusion", "value")
-                    self._layer_height = global_stack.getProperty("layer_height", "value")
-                    self._initial_layer_height = global_stack.getProperty("initial_layer_height", "value")
+                    self._layer_height = round(float(global_stack.getProperty("layer_height", "value")), 3)
+                    self._initial_layer_height = round(float(global_stack.getProperty("initial_layer_height", "value")), 3)
                     self._script_hop_height = extruders[0].getProperty("machine_nozzle_size", "value") / 2
         except Exception as e:
             Logger.log("w", f"Error loading Cura settings: {e}")
