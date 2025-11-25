@@ -212,7 +212,7 @@ class HellaFusionJob(Job):
                 try:
                     global_stack = self._application.getGlobalContainerStack()
                     if global_stack:
-                        layer_height = global_stack.getProperty("layer_height", "value")
+                        layer_height = round(float(global_stack.getProperty("layer_height", "value")), 3)
                 except Exception as e:
                     Logger.log("w", f"Could not get layer height from profile: {e}")
                 

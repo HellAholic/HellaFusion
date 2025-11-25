@@ -520,8 +520,8 @@ class HellaFusionController(QObject):
                     return None
                 
                 return {
-                    'layer_height': float(global_stack.getProperty("layer_height", "value") or 0.2),
-                    'initial_layer_height': float(global_stack.getProperty("layer_height_0", "value") or 0.2),
+                    'layer_height': round(float(global_stack.getProperty("layer_height", "value") or 0.2), 3),
+                    'initial_layer_height': round(float(global_stack.getProperty("layer_height_0", "value") or 0.2), 3),
                     'retraction_enabled': bool(extruders[0].getProperty("retraction_enable", "value")),
                     'retraction_amount': float(extruders[0].getProperty("retraction_amount", "value") or 2.0),
                     'retraction_speed': float(extruders[0].getProperty("retraction_retract_speed", "value") or 35.0),
