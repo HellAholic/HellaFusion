@@ -44,6 +44,7 @@ class HellaFusionLogic:
         self._speed_travel = 3000
         self._script_hop_height = 0.4
         self._layer_height = 0.2
+        self._shrinkage_compensation_factor = 100.0
         
         self._loadCuraSettings()
     
@@ -64,8 +65,16 @@ class HellaFusionLogic:
                     self._retraction_prime_speed = extruders[0].getProperty("retraction_prime_speed", "value") * 60
                     self._retraction_amount = extruders[0].getProperty("retraction_amount", "value")
                     self._relative_extrusion = global_stack.getProperty("relative_extrusion", "value")
-                    self._layer_height = round(float(global_stack.getProperty("layer_height", "value")), 3)
-                    self._initial_layer_height = round(float(global_stack.getProperty("initial_layer_height", "value")), 3)
+                    
+                    # Read layer heights and shrinkage factor from Cura
+                    layer_height_raw = float(global_stack.getProperty("layer_height", "value"))
+                    initial_layer_height_raw = float(global_stack.getProperty("layer_height_0", "value"))
+                    self._shrinkage_compensation_factor = float(global_stack.getProperty("material_shrinkage_percentage_z", "value"))
+                    
+                    # Convert from Cura format to actual values for plugin calculations
+                    self._layer_height = TransitionData.convert_from_cura(layer_height_raw, self._shrinkage_compensation_factor)
+                    self._initial_layer_height = TransitionData.convert_from_cura(initial_layer_height_raw, self._shrinkage_compensation_factor)
+                    
                     self._script_hop_height = extruders[0].getProperty("machine_nozzle_size", "value") / 2
         except Exception as e:
             Logger.log("w", f"Error loading Cura settings: {e}")
@@ -521,6 +530,8 @@ class HellaFusionLogic:
             initial_layer_height = transition_data.adjusted_initial_layer_height
         else:
             # Fallback for backward compatibility
+            # NOTE: section data should already contain actual values (converted from Cura format)
+            # Do NOT apply shrinkage conversion here - it's already been done when reading from Cura
             layer_height = section.get('layer_height', 0.2)
             initial_layer_height = section.get('initial_layer_height', layer_height)
         

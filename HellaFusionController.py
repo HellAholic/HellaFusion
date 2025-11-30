@@ -446,7 +446,7 @@ class HellaFusionController(QObject):
 
     def calculateTransitionAdjustments(self, transitions):
         """
-        Calculate exact transition points using TransitionCalculator (PHASE 2 REFACTORING).
+        Calculate exact transition points using TransitionCalculator.
         
         This method delegates to TransitionCalculator (single source of truth) which implements
         the planofaction.md algorithm exactly. The 400-line inline calculation has been replaced
@@ -519,19 +519,29 @@ class HellaFusionController(QObject):
                 if not extruders:
                     return None
                 
+                # Import TransitionData for conversion helpers
+                from .TransitionData import TransitionData
+                
+                # Read raw values from Cura (these have shrinkage compensation already applied)
+                layer_height_raw = float(global_stack.getProperty("layer_height", "value") or 0.2)
+                initial_layer_height_raw = float(global_stack.getProperty("layer_height_0", "value") or 0.2)
+                shrinkage_factor = float(global_stack.getProperty("material_shrinkage_percentage_z", "value") or 100.0)
+                
+                # Convert from Cura format to actual values for plugin calculations
+                layer_height_actual = TransitionData.convert_from_cura(layer_height_raw, shrinkage_factor)
+                initial_layer_height_actual = TransitionData.convert_from_cura(initial_layer_height_raw, shrinkage_factor)
+                
                 return {
-                    'layer_height': round(float(global_stack.getProperty("layer_height", "value") or 0.2), 3),
-                    'initial_layer_height': round(float(global_stack.getProperty("layer_height_0", "value") or 0.2), 3),
+                    'layer_height': layer_height_actual,
+                    'initial_layer_height': initial_layer_height_actual,
                     'retraction_enabled': bool(extruders[0].getProperty("retraction_enable", "value")),
                     'retraction_amount': float(extruders[0].getProperty("retraction_amount", "value") or 2.0),
                     'retraction_speed': float(extruders[0].getProperty("retraction_retract_speed", "value") or 35.0),
                     'prime_speed': float(extruders[0].getProperty("retraction_prime_speed", "value") or 30.0),
+                    'material_shrinkage_percentage_z': shrinkage_factor,
                     'profile_name': global_stack.quality.getName() if global_stack.quality else "Unknown"
                 }
-            
-            # ═══════════════════════════════════════════════════════════════════════════
-            # PHASE 2: USE TRANSITIONCALCULATOR - Single Source of Truth
-            # ═══════════════════════════════════════════════════════════════════════════
+
             self._logMessage("═" * 80)
             self._logMessage("USING TRANSITIONCALCULATOR ")
             self._logMessage("═" * 80)
@@ -578,7 +588,7 @@ class HellaFusionController(QObject):
                         'is_base_pattern': td.is_first_section,
                         'is_last_section': td.is_last_section
                     },
-                    # Store TransitionData object for Phase 3 (when Logic is refactored)
+                    'material_shrinkage_percentage_z': td.material_shrinkage_percentage_z,
                     '_transition_data': td
                 }
                 sections.append(section_dict)
@@ -609,8 +619,14 @@ class HellaFusionController(QObject):
             Logger.logException("e", f"Unexpected error switching quality profile: {str(e)}")
             return False
     
-    def applyLayerHeightAdjustment(self, profile_container, adjusted_initial_height):
-        """Apply the calculated initial layer height adjustment to a profile and trigger settings update."""
+    def applyLayerHeightAdjustment(self, profile_container, adjusted_initial_height, shrinkage_factor):
+        """Apply the calculated initial layer height adjustment to a profile and trigger settings update.
+        
+        Args:
+            profile_container: The profile container to modify
+            adjusted_initial_height: The ACTUAL calculated initial layer height (not Cura format)
+            shrinkage_factor: material_shrinkage_percentage_z value
+        """
         try:
             application = CuraApplication.getInstance()
             global_stack = application.getGlobalContainerStack()
@@ -619,11 +635,21 @@ class HellaFusionController(QObject):
                 Logger.log("e", "No global stack available")
                 return False
             
+            # Import TransitionData for conversion helpers
+            from .TransitionData import TransitionData
+            
             # Get the user changes container
             user_changes = global_stack.userChanges
+
+            # Convert from actual value to Cura format (apply shrinkage compensation)
+            # The adjusted_initial_height is in actual units, we need to convert to Cura format
+            adjusted_initial_height_cura = TransitionData.convert_to_cura(
+                float(adjusted_initial_height), 
+                shrinkage_factor
+            )
             
-            # Set the adjusted initial layer height
-            user_changes.setProperty("layer_height_0", "value", adjusted_initial_height)
+            # Set the adjusted initial layer height in Cura format
+            user_changes.setProperty("layer_height_0", "value", adjusted_initial_height_cura)
             
             # Trigger settings update to invalidate engine state
             # This will cause Cura to naturally re-slice when needed

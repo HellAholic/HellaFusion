@@ -36,6 +36,7 @@ class TransitionData:
     layer_height: float = 0.2
     original_initial_layer_height: float = 0.2
     adjusted_initial_layer_height: float = 0.2
+    material_shrinkage_percentage_z: float = 100.0
     
     # Layer numbering
     start_layer_num: Optional[int] = None
@@ -60,6 +61,41 @@ class TransitionData:
         """Initialize metadata dict if not provided."""
         if self.metadata is None:
             object.__setattr__(self, 'metadata', {})
+    
+    @staticmethod
+    def convert_from_cura(value: float, shrinkage_factor: float) -> float:
+        """Convert layer height from Cura format (with shrinkage applied) to actual value.
+        
+        Cura multiplies layer heights by (shrinkage_factor / 100) before we can read them.
+        To get the actual value for calculations, we need to reverse this:
+        actual_value = cura_value / (shrinkage_factor / 100) = cura_value * 100 / shrinkage_factor
+        
+        Args:
+            value: Layer height value as read from Cura
+            shrinkage_factor: material_shrinkage_percentage_z (e.g., 100.1)
+        
+        Returns:
+            Actual layer height value for plugin calculations
+        """
+        if shrinkage_factor == 0:
+            return value  # Avoid division by zero
+        return (value * 100.0) / shrinkage_factor
+    
+    @staticmethod
+    def convert_to_cura(value: float, shrinkage_factor: float) -> float:
+        """Convert layer height from actual value to Cura format (with shrinkage applied).
+        
+        When setting layer heights back to Cura, we need to apply shrinkage compensation:
+        cura_value = actual_value * (shrinkage_factor / 100)
+        
+        Args:
+            value: Actual layer height value from plugin calculations
+            shrinkage_factor: material_shrinkage_percentage_z (e.g., 100.1)
+        
+        Returns:
+            Layer height value in Cura format (with shrinkage applied)
+        """
+        return value * (shrinkage_factor / 100.0)
     
     @property
     def is_first_section(self) -> bool:
@@ -165,6 +201,7 @@ class TransitionData:
             'adjusted_initial': self.adjusted_initial_layer_height,
             'original_initial': self.original_initial_layer_height,
             'actual_transition_z': self.actual_end_z,
+            'material_shrinkage_percentage_z': self.material_shrinkage_percentage_z,
             'alignment_info': {
                 'alignment_type': self.alignment_type,
                 'gap_with_base': self.gap_with_previous,

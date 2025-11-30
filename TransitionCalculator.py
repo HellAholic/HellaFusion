@@ -190,6 +190,7 @@ class TransitionCalculator:
             layer_height=layer_height,
             original_initial_layer_height=initial_layer_height,
             adjusted_initial_layer_height=adjusted_initial,
+            material_shrinkage_percentage_z=params.get('material_shrinkage_percentage_z', 100.0),
             start_layer_num=0,
             end_layer_num=end_layer_num,
             total_layers=total_layers,
@@ -301,6 +302,7 @@ class TransitionCalculator:
             layer_height=layer_height,
             original_initial_layer_height=original_initial,
             adjusted_initial_layer_height=adjusted_initial,
+            material_shrinkage_percentage_z=params.get('material_shrinkage_percentage_z', 100.0),
             start_layer_num=None,  # Will be calculated relative to section start
             end_layer_num=end_layer_num,
             total_layers=total_layers,

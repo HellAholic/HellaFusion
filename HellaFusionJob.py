@@ -210,9 +210,16 @@ class HellaFusionJob(Job):
                 # Get layer height from current profile
                 layer_height = PluginConstants.DEFAULT_LAYER_HEIGHT  # Default fallback
                 try:
+                    from .TransitionData import TransitionData
+                    
                     global_stack = self._application.getGlobalContainerStack()
                     if global_stack:
-                        layer_height = round(float(global_stack.getProperty("layer_height", "value")), 3)
+                        # Read raw value from Cura (has shrinkage applied)
+                        layer_height_raw = float(global_stack.getProperty("layer_height", "value"))
+                        shrinkage_factor = float(global_stack.getProperty("material_shrinkage_percentage_z", "value") or 100.0)
+                        
+                        # Convert from Cura format to actual value for plugin calculations
+                        layer_height = round(TransitionData.convert_from_cura(layer_height_raw, shrinkage_factor), 3)
                 except Exception as e:
                     Logger.log("w", f"Could not get layer height from profile: {e}")
                 
@@ -690,7 +697,11 @@ class HellaFusionJob(Job):
             return True
     
     def _applyLayerHeightAdjustment(self, adjusted_initial_height: float) -> bool:
-        """Apply the calculated initial layer height adjustment to the current profile."""
+        """Apply the calculated initial layer height adjustment to the current profile.
+        
+        Args:
+            adjusted_initial_height: The ACTUAL calculated initial layer height (not Cura format)
+        """
         try:
             global_stack = self._application.getGlobalContainerStack()
             
@@ -698,13 +709,25 @@ class HellaFusionJob(Job):
                 Logger.log("e", "No global stack available for layer height adjustment")
                 return False
             
+            # Import TransitionData for conversion helpers
+            from .TransitionData import TransitionData
+            
+            # Get shrinkage factor
+            shrinkage_factor = float(global_stack.getProperty("material_shrinkage_percentage_z", "value") or 100.0)
+            
+            # Convert from actual value to Cura format (apply shrinkage compensation)
+            adjusted_initial_height_cura = TransitionData.convert_to_cura(
+                adjusted_initial_height, 
+                shrinkage_factor
+            )
+            
             # Get the user changes container
             user_changes = global_stack.userChanges
             
             # Always set the property explicitly to ensure Cura gets proper signals
             # This is required even when the value equals the original to trigger
             # proper settings injection and prevent slicing failures
-            user_changes.setProperty("layer_height_0", "value", adjusted_initial_height)
+            user_changes.setProperty("layer_height_0", "value", adjusted_initial_height_cura)
             
             # Give Cura time to process the change
             time.sleep(5)
