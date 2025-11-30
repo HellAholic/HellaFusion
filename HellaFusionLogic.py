@@ -29,7 +29,39 @@ from .TransitionData import TransitionData
 
 class HellaFusionLogic:
     """Core logic for extracting Z height ranges and combining gcode sections."""
-    
+
+    @staticmethod
+    def _parseTimeElapsed(line_stripped: str) -> float:
+        """Safely parse TIME_ELAPSED value from a comment line.
+        
+        Handles various formats:
+        - ;TIME_ELAPSED:123.456
+        - ;TIME_ELAPSED:123.456 ; inline comment
+        - ;TIME_ELAPSED: 123.456 (with space after colon)
+        
+        Args:
+            line_stripped: Stripped line that should start with ;TIME_ELAPSED:
+            
+        Returns:
+            Parsed time value, or None if parsing fails
+        """
+        if not line_stripped.startswith(';TIME_ELAPSED:'):
+            return None
+        
+        try:
+            # Remove the prefix ";TIME_ELAPSED:"
+            time_str = line_stripped[14:]  # len(";TIME_ELAPSED:") = 14
+            
+            # Strip any inline comments (in case comment stripping didn't catch it)
+            if ';' in time_str:
+                time_str = time_str.split(';')[0]
+            
+            # Parse the float
+            return float(time_str.strip())
+        except (ValueError, IndexError, AttributeError) as e:
+            Logger.log("w", f"Failed to parse TIME_ELAPSED from: '{line_stripped}' - Error: {e}")
+            return None
+
     def __init__(self):
         self._retraction_enabled = True
         self._display_command_service = DisplayCommandService()
@@ -908,10 +940,9 @@ class HellaFusionLogic:
                 
                 # Collect TIME_ELAPSED (keep last one found in layer)
                 elif line_stripped.startswith(';TIME_ELAPSED:'):
-                    try:
-                        reference_layer_time = float(line_stripped.split(':')[1])
-                    except (ValueError, IndexError):
-                        pass
+                    parsed_time = self._parseTimeElapsed(line_stripped)
+                    if parsed_time is not None:
+                        reference_layer_time = parsed_time
         
         # If we didn't find an E value (empty layer with only travel moves), look at the previous layer
         if prev_layer_e is None and prev_layer_num > 0:
@@ -950,10 +981,9 @@ class HellaFusionLogic:
                     
                     # Collect TIME_ELAPSED
                     elif line_stripped.startswith(';TIME_ELAPSED:'):
-                        try:
-                            reference_layer_time = float(line_stripped.split(':')[1])
-                        except (ValueError, IndexError):
-                            pass
+                        parsed_time = self._parseTimeElapsed(line_stripped)
+                        if parsed_time is not None:
+                            reference_layer_time = parsed_time
         
         # Store reference layer time for time adjustment algorithm
         if reference_layer_time is not None:
@@ -1100,12 +1130,12 @@ class HellaFusionLogic:
                 # Find last TIME_ELAPSED from previous section (UNADJUSTED)
                 prev_section_last_time_unadjusted = None
                 for line in reversed(sections[i-1]['gcode_lines']):
-                    if line.strip().startswith(';TIME_ELAPSED:'):
-                        try:
-                            prev_section_last_time_unadjusted = float(line.strip().split(':')[1])
+                    line_stripped = line.strip()
+                    if line_stripped.startswith(';TIME_ELAPSED:'):
+                        parsed_time = self._parseTimeElapsed(line_stripped)
+                        if parsed_time is not None:
+                            prev_section_last_time_unadjusted = parsed_time
                             break
-                        except (ValueError, IndexError):
-                            pass
                 
                 # Calculate the ADJUSTED end time of previous section
                 # Adjusted time = original time + previous section's delta
@@ -1117,16 +1147,29 @@ class HellaFusionLogic:
                 # Get reference layer time from current section
                 baseline_time_section_b = sections[i].get('reference_layer_time', None)
                 
-                # Calculate delta
+                # Calculate delta with detailed logging
                 if baseline_time_section_a is not None and baseline_time_section_b is not None:
                     time_delta = baseline_time_section_a - baseline_time_section_b
                     sections[i]['time_delta'] = time_delta
+                    
+                    # Log detailed calculation for debugging
+                    Logger.log("d", f"Section {sections[i]['section_number']} time delta: {time_delta:.3f}s "
+                             f"(prev_end={baseline_time_section_a:.3f}s, curr_ref={baseline_time_section_b:.3f}s)")
                 elif baseline_time_section_a is None:
                     sections[i]['time_delta'] = 0.0
-                    Logger.log("e", f"Section {sections[i]['section_number']}: Could not find baseline time from previous section - using delta=0")
+                    Logger.log("e", f"Section {sections[i]['section_number']}: Could not find TIME_ELAPSED from previous section - using delta=0. "
+                             f"Time estimates will be INCORRECT!")
                 else:  # baseline_time_section_b is None
                     sections[i]['time_delta'] = 0.0
-                    Logger.log("e", f"Section {sections[i]['section_number']}: Missing reference_layer_time - using delta=0 (THIS IS WRONG!)")
+                    Logger.log("e", f"Section {sections[i]['section_number']}: Missing reference_layer_time - using delta=0. "
+                             f"Time estimates will be INCORRECT! Check that trimming preserved the correct layers.")
+            
+            # Validate time deltas and log summary
+            invalid_deltas = sum(1 for sec in sections[1:] if sec.get('time_delta', 0.0) == 0.0 and sec.get('reference_layer_time') is None)
+            if invalid_deltas > 0:
+                Logger.log("w", f"WARNING: {invalid_deltas} section(s) have invalid time deltas. Final time estimate may be incorrect.")
+            else:
+                Logger.log("i", f"Time delta calculation completed successfully for all {len(sections)} section(s)")
             
             # No need to set start states - each section has definitive start/end states from profile settings
             
@@ -1164,17 +1207,17 @@ class HellaFusionLogic:
                     
                     # Update TIME_ELAPSED comments using pre-calculated delta
                     if line_stripped.startswith(';TIME_ELAPSED:'):
-                        try:
-                            original_time = float(line_stripped.split(':')[1])
+                        original_time = self._parseTimeElapsed(line_stripped)
+                        if original_time is not None:
                             # Apply the time delta to adjust for section transitions
                             adjusted_time = original_time + time_delta
                             combined.append(f";TIME_ELAPSED:{adjusted_time:.6f}\n")
                             time_adjusted_count += 1
                             continue
-                        except (ValueError, IndexError):
+                        else:
                             # If parsing fails, keep original line
                             Logger.log("w", f"Failed to parse TIME_ELAPSED: {line_stripped}")
-                            pass
+                            # Fall through to append original line
                     
                     # For sections 2+, DON'T strip Z - the extracted section includes the Z move for proper positioning
                     # The transition will handle XY/E, but Z positioning is from the extracted section
