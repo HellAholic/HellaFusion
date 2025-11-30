@@ -557,11 +557,13 @@ class HellaFusionJob(Job):
                     self.statusChanged.emit(f"ERROR: {error_msg}")
                     return "", error_msg
                 
-                # Find the corresponding transition to get retraction settings
+                # Find the corresponding transition to get retraction settings and nozzle height
                 retraction_settings = None
+                nozzle_height = 0.0
                 for transition in self._transitions:
                     if transition['section_number'] == gcode_info['section_number']:
                         retraction_settings = transition.get('profile_retraction_settings')
+                        nozzle_height = transition.get('nozzle_height', 0.0)
                         break
                 
                 section_data = {
@@ -572,7 +574,8 @@ class HellaFusionJob(Job):
                     'layer_height': gcode_info.get('layer_height', 0.2),  # Pass layer height from profile
                     'profile_retraction_settings': retraction_settings,  # Pass retraction settings from profile
                     'adjusted_initial': gcode_info.get('adjusted_initial'),  # Pass adjusted initial layer height
-                    'original_initial': gcode_info.get('original_initial')  # Pass original initial layer height
+                    'original_initial': gcode_info.get('original_initial'),  # Pass original initial layer height
+                    'nozzle_height': nozzle_height  # Pass nozzle height from UI
                 }
                 sections_data.append(section_data)
             

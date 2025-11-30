@@ -21,7 +21,7 @@ from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                              QPushButton, QLineEdit, QTextEdit, QProgressBar,
                              QFileDialog, QSpinBox, QGroupBox, QGridLayout,
                              QComboBox, QSizePolicy, QWidget, QDoubleSpinBox,
-                             QMessageBox, QScrollArea, QTabWidget)
+                             QMessageBox, QScrollArea, QTabWidget, QCheckBox)
 from PyQt6.QtCore import pyqtSignal, Qt, QTimer
 from PyQt6.QtGui import QFont
 
@@ -261,6 +261,18 @@ class HellaFusionDialog(QDialog):
         scroll_area.setWidget(scroll_widget)
         transitions_tab_layout.addWidget(scroll_area)
         
+        # Expert settings checkbox
+        expert_settings_layout = QHBoxLayout()
+        expert_settings_layout.setContentsMargins(0, 8, 0, 0)
+        
+        self._expert_settings_checkbox = QCheckBox("Show Expert Settings")
+        self._expert_settings_checkbox.setStyleSheet(PluginConstants.CHECKBOX_STYLE)
+        self._expert_settings_checkbox.stateChanged.connect(self._onExpertSettingsToggled)
+        expert_settings_layout.addWidget(self._expert_settings_checkbox)
+        expert_settings_layout.addStretch()
+        
+        transitions_tab_layout.addLayout(expert_settings_layout)
+        
         # Add/Remove buttons
         transition_buttons_layout = QHBoxLayout()
         transition_buttons_layout.setContentsMargins(0, 8, 0, 0)  # Add top margin for spacing
@@ -294,10 +306,10 @@ class HellaFusionDialog(QDialog):
         transition_buttons_layout.addStretch()
         transitions_tab_layout.addLayout(transition_buttons_layout)
         
-        transitions_tab.setLayout(transitions_tab_layout)
-        
-        # Add first section by default
+        # Add first section by default (before setting layout to avoid premature rendering)
         self._addSectionRow(1)
+        
+        transitions_tab.setLayout(transitions_tab_layout)
         
         # Add tabs to tab widget
         self._tab_widget.addTab(config_tab, "Configuration & Control")
@@ -344,8 +356,32 @@ class HellaFusionDialog(QDialog):
         self._populateProfileCombo(profile_combo)
         section_layout.addWidget(profile_combo)
         
+        # Expert settings: Nozzle height for this section
+        show_expert = self._expert_settings_checkbox.isChecked()
+        
+        nozzle_height_label = QLabel(f"Nozzle Height:")
+        nozzle_height_label.setStyleSheet(PluginConstants.LABEL_STYLE)
+        nozzle_height_label.hide()
+        section_layout.addWidget(nozzle_height_label)
+        
+        nozzle_height_spin = QDoubleSpinBox()
+        nozzle_height_spin.setDecimals(2)
+        nozzle_height_spin.setMinimum(0.0)
+        nozzle_height_spin.setMaximum(20.0)
+        nozzle_height_spin.setSingleStep(0.1)
+        nozzle_height_spin.setValue(0.0)
+        nozzle_height_spin.setStyleSheet(PluginConstants.SPIN_BOX_STYLE)
+        nozzle_height_spin.hide()
+        section_layout.addWidget(nozzle_height_spin)
+        
         section_widget.setLayout(section_layout)
         self._transitions_container.addWidget(section_widget)
+        
+        # Set suffix and show widgets AFTER being added to parent container
+        nozzle_height_spin.setSuffix(" mm")
+        if show_expert:
+            nozzle_height_label.show()
+            nozzle_height_spin.show()
         
         # Store reference
         self._transition_rows.append({
@@ -353,6 +389,8 @@ class HellaFusionDialog(QDialog):
             'widget': section_widget,
             'profile_combo': profile_combo,
             'height_spin': None,  # Only transitions have heights
+            'nozzle_height_label': nozzle_height_label,
+            'nozzle_height_spin': nozzle_height_spin,
             'is_transition': False
         })
     
@@ -394,6 +432,8 @@ class HellaFusionDialog(QDialog):
             'widget': transition_widget,
             'profile_combo': None,
             'height_spin': height_spin,
+            'nozzle_height_label': None,  # Nozzle height is now on sections
+            'nozzle_height_spin': None,  # Nozzle height is now on sections
             'is_transition': True
         })
         
@@ -885,13 +925,19 @@ class HellaFusionDialog(QDialog):
                 profile_data = profile_combo.currentData()
                 
                 if profile_data:
+                    # Get nozzle height from section (expert setting)
+                    nozzle_height = 0.0
+                    if 'nozzle_height_spin' in row and row['nozzle_height_spin']:
+                        nozzle_height = row['nozzle_height_spin'].value()
+                    
                     transitions.append({
                         'section_number': row['section_number'],
                         'start_height': current_height,
                         'end_height': None,  # Will be set by next transition or None for last
                         'profile_id': profile_data.get('container_id'),
                         'intent_category': profile_data.get('intent_category'),
-                        'intent_container_id': profile_data.get('intent_container_id')
+                        'intent_container_id': profile_data.get('intent_container_id'),
+                        'nozzle_height': nozzle_height
                     })
             else:
                 # This is a transition - update previous section's end height
@@ -938,12 +984,14 @@ class HellaFusionDialog(QDialog):
         self._remove_transition_btn.setEnabled(not is_processing and len([r for r in self._transition_rows if r['is_transition']]) > 0)
         self._update_profiles_btn.setEnabled(not is_processing)
         
-        # Disable all profile combos
+        # Disable all profile combos and transition controls
         for row in self._transition_rows:
             if row['profile_combo']:
                 row['profile_combo'].setEnabled(not is_processing)
             if row['height_spin']:
                 row['height_spin'].setEnabled(not is_processing)
+            if row.get('nozzle_height_spin'):
+                row['nozzle_height_spin'].setEnabled(not is_processing)
         
         # Update progress bar
         self._progress_bar.setVisible(is_processing)
@@ -1173,6 +1221,21 @@ class HellaFusionDialog(QDialog):
     def _onProfileSelectionChanged(self):
         """Handle changes to profile selections.""" 
         self._invalidateCalculations()
+        self._saveSettings()
+    
+    def _onExpertSettingsToggled(self, state):
+        """Handle expert settings checkbox toggle - show/hide nozzle height fields."""
+        show_expert = (state == Qt.CheckState.Checked.value)
+        
+        # Show/hide nozzle height fields for all section rows (not transitions)
+        for row in self._transition_rows:
+            if not row['is_transition']:  # Sections only
+                if 'nozzle_height_label' in row and row['nozzle_height_label']:
+                    row['nozzle_height_label'].setVisible(show_expert)
+                if 'nozzle_height_spin' in row and row['nozzle_height_spin']:
+                    row['nozzle_height_spin'].setVisible(show_expert)
+        
+        # Save the expert settings state
         self._saveSettings()
     
     def _connectInvalidationHandlers(self):

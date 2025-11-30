@@ -307,6 +307,10 @@ class HellaFusionLogic:
                     Logger.log("e", "This may indicate a problem with the G-code format or slicing settings.")
                     return False
                 
+                # Add nozzle height from section_info if available
+                if 'nozzle_height' in section_info:
+                    section_data['nozzle_height'] = section_info['nozzle_height']
+                
                 # Check if section has valid gcode (not empty, has actual print moves)
                 if not section_data['gcode_lines'] or len(section_data['gcode_lines']) < 5:
                     Logger.log("w", f"Section {section_info['section_number']} is empty - transition height {section_info['start_height']:.2f}mm may exceed model height.")
@@ -402,7 +406,8 @@ class HellaFusionLogic:
                 'initial_layer_height': adjusted_initial if adjusted_initial is not None else (original_initial if original_initial is not None else layer_height),  # Temp file was sliced with this adjusted value
                 'is_retracted_at_start': retraction_enabled,  # Retracted at start if profile has retraction enabled
                 'is_retracted_at_end': retraction_enabled,    # Retracted at end if profile has retraction enabled
-                'profile_retraction_settings': retraction_settings
+                'profile_retraction_settings': retraction_settings,
+                'nozzle_height': 0.0  # Will be set from section_info if available
             }
             
             current_z = 0.0
@@ -706,6 +711,7 @@ class HellaFusionLogic:
             'is_retracted_at_end': section['is_retracted_at_end'],
             'profile_retraction_settings': section.get('profile_retraction_settings'),
             'reference_layer_time': section.get('reference_layer_time'),  # Preserve TIME_ELAPSED from reference layer for time delta calculation!
+            'nozzle_height': section.get('nozzle_height', 0.0),
             'gcode_lines': trimmed_lines
         }
         
@@ -1642,6 +1648,11 @@ class HellaFusionLogic:
         # Check if we need to adjust Z height for next section
         z_different = abs(end_state['z'] - start_state['z']) > 0.001
         
+        # Calculate nozzle height delta for G92 Z offset
+        prev_nozzle_height = prev_section.get('nozzle_height', 0.0)
+        next_nozzle_height = next_section.get('nozzle_height', 0.0)
+        delta_nozzle = prev_nozzle_height - next_nozzle_height
+        
         if z_different and self._script_hop_height > 0:
             # Z-hop enabled and Z changes between sections
             # Hop above BOTH the end Z and start Z to avoid collision
@@ -1661,6 +1672,11 @@ class HellaFusionLogic:
         elif xy_different:
             # Same Z height: just travel XY (no Z-hop needed for same layer)
             transition.append(f"G0 F{self._speed_travel} X{start_state['x']:.3f} Y{start_state['y']:.3f} ; Travel to next position\n")
+
+        # Apply nozzle height adjustment if different nozzles
+        if abs(delta_nozzle) > 0.001:  # Only add G92 if there's a meaningful difference
+            adjusted_z_hop = z_hop + delta_nozzle
+            transition.append(f"G92 Z{adjusted_z_hop:.3f} ; Adjust Z for nozzle height difference ({delta_nozzle:+.2f}mm)\n")
         
         # Handle priming AFTER travel movements (if needed)
         if filament_decision['needs_prime']:

@@ -265,6 +265,35 @@ class PluginConstants:
         }}
     '''
     
+    CHECKBOX_STYLE = f'''
+        QCheckBox {{
+            color: {TEXT_COLOR_LIGHT_GRAY};
+            font-size: 13px;
+            spacing: 5px;
+        }}
+        QCheckBox::indicator {{
+            width: 18px;
+            height: 18px;
+        }}
+        QCheckBox::indicator:unchecked {{
+            border: 2px solid {TEXT_INPUT_BORDER_COLOR_GRAY};
+            background-color: {TEXT_INPUT_BG_COLOR_DARK_GRAY};
+            border-radius: 3px;
+        }}
+        QCheckBox::indicator:unchecked:hover {{
+            border: 2px solid {BUTTON_PRIMARY_BG};
+        }}
+        QCheckBox::indicator:checked {{
+            border: 2px solid {BUTTON_PRIMARY_BG};
+            background-color: {BUTTON_PRIMARY_BG};
+            border-radius: 3px;
+        }}
+        QCheckBox::indicator:checked:hover {{
+            background-color: {BUTTON_PRIMARY_HOVER_BG};
+            border: 2px solid {BUTTON_PRIMARY_HOVER_BG};
+        }}
+    '''
+    
     TABLE_WIDGET_STYLE = f'''
         QTableWidget {{
             background-color: #2b2b2b;
