@@ -44,6 +44,9 @@ class HellaFusionController(QObject):
         self._quality_profiles = []
         self._profile_service = ProfileSwitchingService()
 
+        # Connect to machine change signals for automatic profile reloading
+        self._connectMachineChangeSignals()
+
         # Load quality profiles asynchronously
         self._loadQualityProfilesAsync()
     
@@ -175,6 +178,77 @@ class HellaFusionController(QObject):
         self._logMessage("Loading quality profiles...")
         QTimer.singleShot(100, self._loadQualityProfiles)
     
+    def _connectMachineChangeSignals(self):
+        """Connect to machine change signals to automatically update quality profiles."""
+        try:
+            application = CuraApplication.getInstance()
+            
+            # Connect to global container stack changes (when machine is switched)
+            if hasattr(application, 'globalContainerStackChanged'):
+                application.globalContainerStackChanged.connect(self._onMachineChanged)
+            
+            # Connect to machine manager signals
+            machine_manager = application.getMachineManager()
+            if hasattr(machine_manager, 'globalContainerChanged'):
+                machine_manager.globalContainerChanged.connect(self._onMachineChanged)
+            
+            # Connect to container tree changes (when profiles are added/modified)
+            from cura.Machines.ContainerTree import ContainerTree
+            container_tree = ContainerTree.getInstance()
+            if hasattr(container_tree, 'containerTreeChanged'):
+                container_tree.containerTreeChanged.connect(self._onMachineChanged)
+            
+            # Connect to container registry signals (for profile save/update detection)
+            container_registry = application.getContainerRegistry()
+            if hasattr(container_registry, 'containerAdded'):
+                container_registry.containerAdded.connect(self._onContainerAdded)
+            
+            if hasattr(container_registry, 'containerMetaDataChanged'):
+                container_registry.containerMetaDataChanged.connect(self._onContainerMetaDataChanged)
+            
+        except Exception as e:
+            Logger.log("w", f"Could not connect to some machine change signals: {e}")
+
+    def _onMachineChanged(self):
+        """Handle machine change events by refreshing quality profiles."""
+        try:
+            Logger.log("i", "Machine or profile configuration changed - automatically reloading quality profiles")
+            # Use a short delay to allow Cura to finish updating its internal state
+            QTimer.singleShot(500, self._loadQualityProfiles)
+
+        except Exception as e:
+            Logger.log("e", f"Error handling machine change: {e}")
+
+    def _onContainerAdded(self, container):
+        """Handle new container added - reload if it's a quality_changes profile."""
+        try:
+            # Check if it's a quality_changes container (custom profile)
+            if container and hasattr(container, 'getMetaDataEntry'):
+                container_type = container.getMetaDataEntry("type", "")
+                if container_type == "quality_changes":
+                    container_name = container.getName() if hasattr(container, 'getName') else "Unknown"
+                    Logger.log("i", f"New quality profile '{container_name}' saved - automatically reloading")
+                    # Use a short delay to allow Cura to finish updating
+                    QTimer.singleShot(500, self._loadQualityProfiles)
+
+        except Exception as e:
+            Logger.log("w", f"Error handling container added: {e}")
+
+    def _onContainerMetaDataChanged(self, container):
+        """Handle container metadata changed - reload if it's a quality_changes profile."""
+        try:
+            # Check if it's a quality_changes container (custom profile update)
+            if container and hasattr(container, 'getMetaDataEntry'):
+                container_type = container.getMetaDataEntry("type", "")
+                if container_type == "quality_changes":
+                    container_name = container.getName() if hasattr(container, 'getName') else "Unknown"
+                    Logger.log("i", f"Quality profile '{container_name}' updated - automatically reloading")
+                    # Use a short delay to allow Cura to finish updating
+                    QTimer.singleShot(500, self._loadQualityProfiles)
+
+        except Exception as e:
+            Logger.log("w", f"Error handling container metadata changed: {e}")
+
     def _buildCompatibleDefinitionsList(self, machine_definition_id, global_stack):
         """Build a list of compatible definition IDs using Cura's proper inheritance chain."""
         current_definition = global_stack.definition
