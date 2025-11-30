@@ -392,6 +392,9 @@ class HellaFusionLogic:
             
             for i, line in enumerate(gcode_lines):
                 line_stripped = line.strip()
+                # Strip inline comments (keep full comment lines intact)
+                if not line_stripped.startswith(";") and ";" in line_stripped:
+                    line_stripped = line_stripped.split(";")[0].strip()
                 
                 # Skip header block
                 if ';START_OF_HEADER' in line_stripped:
@@ -576,6 +579,9 @@ class HellaFusionLogic:
         
         for line in section['gcode_lines']:
             line_stripped = line.strip()
+            # Strip inline comments (keep full comment lines intact)
+            if not line_stripped.startswith(";") and ";" in line_stripped:
+                line_stripped = line_stripped.split(";")[0].strip()
             
             # Handle startup (before first ;LAYER:)
             if not startup_done:
@@ -683,6 +689,9 @@ class HellaFusionLogic:
         if min_z is not None:
             for line in trimmed_lines:
                 line_stripped = line.strip()
+                # Strip inline comments (keep full comment lines intact)
+                if not line_stripped.startswith(";") and ";" in line_stripped:
+                    line_stripped = line_stripped.split(";")[0].strip()
                 if line_stripped.startswith(('G0', 'G1')):
                     match_x = re.search(r' X(\d+\.?\d*)', line_stripped)
                     match_y = re.search(r' Y(\d+\.?\d*)', line_stripped)
@@ -770,6 +779,9 @@ class HellaFusionLogic:
         # Scan through the reference layer lines to find the last XYE values
         for line in reference_layer_lines:
             line_stripped = line.strip()
+            # Strip inline comments (keep full comment lines intact)
+            if not line_stripped.startswith(";") and ";" in line_stripped:
+                line_stripped = line_stripped.split(";")[0].strip()
             
             if line_stripped.startswith(('G0', 'G1')):
                 match_x = re.search(r' X(\d+\.?\d*)', line_stripped)
@@ -821,6 +833,9 @@ class HellaFusionLogic:
         # Build a map of layer numbers to Z heights
         for line in section['gcode_lines']:
             line_stripped = line.strip()
+            # Strip inline comments (keep full comment lines intact)
+            if not line_stripped.startswith(";") and ";" in line_stripped:
+                line_stripped = line_stripped.split(";")[0].strip()
             if ';LAYER:' in line_stripped:
                 layer_match = re.search(r';LAYER:(\d+)', line_stripped)
                 if layer_match:
@@ -861,6 +876,9 @@ class HellaFusionLogic:
         
         for line in section['gcode_lines']:  # Scan the current gcode_lines
             line_stripped = line.strip()
+            # Strip inline comments (keep full comment lines intact)
+            if not line_stripped.startswith(";") and ";" in line_stripped:
+                line_stripped = line_stripped.split(";")[0].strip()
             
             # Track when we enter/exit layers
             if ';LAYER:' in line_stripped:
@@ -903,6 +921,9 @@ class HellaFusionLogic:
             
             for line in section['gcode_lines']:
                 line_stripped = line.strip()
+                # Strip inline comments (keep full comment lines intact)
+                if not line_stripped.startswith(";") and ";" in line_stripped:
+                    line_stripped = line_stripped.split(";")[0].strip()
                 
                 if ';LAYER:' in line_stripped:
                     layer_match = re.search(r';LAYER:(\d+)', line_stripped)
@@ -981,6 +1002,9 @@ class HellaFusionLogic:
                     in_header = False
                     for line in first_gcode:
                         line_stripped = line.strip()
+                        # Strip inline comments (keep full comment lines intact)
+                        if not line_stripped.startswith(";") and ";" in line_stripped:
+                            line_stripped = line_stripped.split(";")[0].strip()
                         
                         # Copy header block
                         if ';START_OF_HEADER' in line_stripped:
@@ -1123,6 +1147,9 @@ class HellaFusionLogic:
                 
                 for line in section['gcode_lines']:
                     line_stripped = line.strip()
+                    # Strip inline comments (keep full comment lines intact)
+                    if not line_stripped.startswith(";") and ";" in line_stripped:
+                        line_stripped = line_stripped.split(";")[0].strip()
                     
                     # Renumber LAYER_COUNT in startup section
                     if line_stripped.startswith(';LAYER_COUNT:'):
@@ -1315,6 +1342,9 @@ class HellaFusionLogic:
         found_layer_marker = False
         for line in section['gcode_lines']:
             line_stripped = line.strip()
+            # Strip inline comments (keep full comment lines intact)
+            if not line_stripped.startswith(";") and ";" in line_stripped:
+                line_stripped = line_stripped.split(";")[0].strip()
             
             if line_stripped.startswith(';LAYER:'):
                 found_layer_marker = True
