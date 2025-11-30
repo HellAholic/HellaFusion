@@ -692,7 +692,7 @@ class HellaFusionLogic:
                 # Strip inline comments (keep full comment lines intact)
                 if not line_stripped.startswith(";") and ";" in line_stripped:
                     line_stripped = line_stripped.split(";")[0].strip()
-                if line_stripped.startswith(('G0', 'G1')):
+                if line_stripped.startswith(('G0' , 'G1' , 'G2' , 'G3' , 'G92')):
                     match_x = re.search(r' X(\d+\.?\d*)', line_stripped)
                     match_y = re.search(r' Y(\d+\.?\d*)', line_stripped)
                     match_e = re.search(r' E(-?\d+\.?\d*)', line_stripped)
@@ -718,7 +718,7 @@ class HellaFusionLogic:
         found_e = False
         
         for line in reversed(trimmed_lines):
-            if line.strip().startswith(('G0', 'G1')):
+            if line.strip().startswith(('G0' , 'G1' , 'G2' , 'G3' , 'G92')):
                 match_x = re.search(r' X(\d+\.?\d*)', line)
                 match_y = re.search(r' Y(\d+\.?\d*)', line)
                 match_e = re.search(r' E(-?\d+\.?\d*)', line)
@@ -783,7 +783,7 @@ class HellaFusionLogic:
             if not line_stripped.startswith(";") and ";" in line_stripped:
                 line_stripped = line_stripped.split(";")[0].strip()
             
-            if line_stripped.startswith(('G0', 'G1')):
+            if line_stripped.startswith(('G0' , 'G1' , 'G2' , 'G3' , 'G92')):
                 match_x = re.search(r' X(\d+\.?\d*)', line_stripped)
                 match_y = re.search(r' Y(\d+\.?\d*)', line_stripped)
                 match_e = re.search(r' E(-?\d+\.?\d*)', line_stripped)
@@ -894,7 +894,7 @@ class HellaFusionLogic:
             # While in the reference layer, collect LAST XYE and TIME_ELAPSED
             if in_prev_layer:
                 # Collect XYE from G0/G1 commands
-                if line_stripped.startswith(('G0', 'G1')):
+                if line_stripped.startswith(('G0' , 'G1' , 'G2' , 'G3' , 'G92')):
                     match_x = re.search(r' X(\d+\.?\d*)', line_stripped)
                     match_y = re.search(r' Y(\d+\.?\d*)', line_stripped)
                     match_e = re.search(r' E(-?\d+\.?\d*)', line_stripped)
@@ -936,7 +936,7 @@ class HellaFusionLogic:
                 
                 if in_prev_layer:
                     # Collect XYE
-                    if line_stripped.startswith(('G0', 'G1')):
+                    if line_stripped.startswith(('G0' , 'G1' , 'G2' , 'G3' , 'G92')):
                         match_x = re.search(r' X(\d+\.?\d*)', line_stripped)
                         match_y = re.search(r' Y(\d+\.?\d*)', line_stripped)
                         match_e = re.search(r' E(-?\d+\.?\d*)', line_stripped)
@@ -1181,7 +1181,7 @@ class HellaFusionLogic:
                     # (This changed when we implemented smart layer alignment)
                     
                     # Mark that we've passed the first move
-                    if line_stripped.startswith(('G0', 'G1')):
+                    if line_stripped.startswith(('G0' , 'G1' , 'G2' , 'G3' , 'G92')):
                         first_move_in_section = False
                     
                     # Copy all other lines as-is
@@ -1360,7 +1360,7 @@ class HellaFusionLogic:
                     if ' X' not in line_stripped and ' Y' not in line_stripped:
                         return True
                 # Stop at first movement command
-                elif line_stripped.startswith(('G0', 'G1')):
+                elif line_stripped.startswith(('G0' , 'G1' , 'G2' , 'G3' , 'G92')):
                     break
         
         return False
