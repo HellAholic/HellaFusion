@@ -40,7 +40,7 @@ class HellaFusionDialog(QDialog):
     """Main dialog for the HellaFusion plugin."""
     
     # Signals
-    startProcessing = pyqtSignal(str, list, int, object)  # dest_folder, transitions, timeout, calculated_transitions
+    startProcessing = pyqtSignal(str, list, int, object, bool)  # dest_folder, transitions, timeout, calculated_transitions, expert_settings_enabled
     stopProcessing = pyqtSignal()
     
     def __init__(self, parent=None):
@@ -911,7 +911,8 @@ class HellaFusionDialog(QDialog):
             self._onCalculateTransitionsClicked()
         
         slice_timeout = self._slice_timeout_spin.value()
-        self.startProcessing.emit(dest_folder, transitions, slice_timeout, self._calculated_transitions)
+        expert_settings_enabled = self._expert_settings_checkbox.isChecked()
+        self.startProcessing.emit(dest_folder, transitions, slice_timeout, self._calculated_transitions, expert_settings_enabled)
     
     def _collectTransitions(self):
         """Collect all transition definitions from the UI."""
@@ -1069,16 +1070,23 @@ class HellaFusionDialog(QDialog):
         # Block signals to prevent triggering _saveSettings during load
         self._dest_folder_edit.blockSignals(True)
         self._slice_timeout_spin.blockSignals(True)
+        self._expert_settings_checkbox.blockSignals(True)
         
         try:
             if 'dest_folder' in settings:
                 self._dest_folder_edit.setText(settings['dest_folder'])
             if 'slice_timeout' in settings:
                 self._slice_timeout_spin.setValue(int(settings['slice_timeout']))
+            if 'expert_settings_enabled' in settings:
+                # Restore the checkbox state
+                self._expert_settings_checkbox.setChecked(settings['expert_settings_enabled'])
+                # Trigger the visibility toggle manually (since signals are blocked)
+                self._onExpertSettingsToggled(Qt.CheckState.Checked.value if settings['expert_settings_enabled'] else Qt.CheckState.Unchecked.value)
         finally:
             # Re-enable signals
             self._dest_folder_edit.blockSignals(False)
             self._slice_timeout_spin.blockSignals(False)
+            self._expert_settings_checkbox.blockSignals(False)
         
         # Update model info on load
         self._updateModelInfo()
@@ -1093,7 +1101,8 @@ class HellaFusionDialog(QDialog):
             
         settings = {
             'dest_folder': self._dest_folder_edit.text(),
-            'slice_timeout': self._slice_timeout_spin.value()
+            'slice_timeout': self._slice_timeout_spin.value(),
+            'expert_settings_enabled': self._expert_settings_checkbox.isChecked()
         }
         
         self._controller.saveSettings(settings)

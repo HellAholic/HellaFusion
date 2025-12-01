@@ -44,13 +44,14 @@ class HellaFusionJob(Job):
     
     statusChanged = Signal()
     
-    def __init__(self, destination_folder: str, transitions: list, slice_timeout: int = 300, calculated_transitions: list = None) -> None:
+    def __init__(self, destination_folder: str, transitions: list, slice_timeout: int = 300, calculated_transitions: list = None, expert_settings_enabled: bool = False) -> None:
         super().__init__()
         
         self._destination_folder = destination_folder
         self._transitions = transitions
         self._slice_timeout = slice_timeout
         self._calculated_transitions = calculated_transitions or []
+        self._expert_settings_enabled = expert_settings_enabled
         
         # State management
         self._state_manager = JobStateManager()
@@ -580,7 +581,7 @@ class HellaFusionJob(Job):
                 sections_data.append(section_data)
             
             # Combine gcode files using UNIFIED approach
-            success = self._logic.combineGcodeFiles(sections_data, output_path, self._calculated_transitions)
+            success = self._logic.combineGcodeFiles(sections_data, output_path, self._calculated_transitions, self._expert_settings_enabled)
             
             if success:
                 # Verify output file was created

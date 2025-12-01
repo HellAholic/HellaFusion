@@ -48,7 +48,7 @@ class HellaFusion(Extension):
         self._dialog.show()
         self._dialog.raise_()
     
-    def startSplicing(self, destination_folder, transitions, slice_timeout, calculated_transitions=None):
+    def startSplicing(self, destination_folder, transitions, slice_timeout, calculated_transitions=None, expert_settings_enabled=False):
         """Start the gcode splicing process.
         
         Args:
@@ -56,6 +56,7 @@ class HellaFusion(Extension):
             transitions: List of transition definitions with heights and profiles
             slice_timeout: Timeout for each slicing operation
             calculated_transitions: Optional list of calculated initial layer height adjustments
+            expert_settings_enabled: Whether expert settings are enabled in the UI
         """
         if self._job and self._job.isRunning():
             Logger.log("w", "Cannot start gcode splicing - job already running")
@@ -63,7 +64,7 @@ class HellaFusion(Extension):
 
         try:
             # Create the splicing job (uses model on build plate)  
-            self._job = HellaFusionJob(destination_folder, transitions, slice_timeout, calculated_transitions)
+            self._job = HellaFusionJob(destination_folder, transitions, slice_timeout, calculated_transitions, expert_settings_enabled)
             self._job.progress.connect(self._onProgress)
             self._job.finished.connect(self._onJobCompleted)
             self._job.statusChanged.connect(self._onJobStatusChanged)

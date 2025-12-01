@@ -243,7 +243,7 @@ class HellaFusionLogic:
         
         return result
     
-    def combineGcodeFiles(self, sections_data: list, output_path: str, calculated_transitions: list = None) -> bool:
+    def combineGcodeFiles(self, sections_data: list, output_path: str, calculated_transitions: list = None, expert_settings_enabled: bool = False) -> bool:
         """Combine multiple gcode files into a single spliced file using TransitionData
         
         Args:
@@ -251,6 +251,7 @@ class HellaFusionLogic:
             output_path: Path where the combined gcode will be saved
             calculated_transitions: REQUIRED - List of dicts from Controller containing '_transition_data' 
                                    (TransitionData objects from TransitionCalculator)
+            expert_settings_enabled: Whether expert settings (like nozzle height G92) are enabled
             
         Returns:
             True if successful, False otherwise
@@ -258,6 +259,8 @@ class HellaFusionLogic:
         Raises:
             ValueError: If calculated_transitions is missing or doesn't contain TransitionData objects
         """
+        # Store expert settings flag for use in transition generation
+        self._expert_settings_enabled = expert_settings_enabled
         try:
             # Pre-flight validation
             if calculated_transitions:
@@ -1648,35 +1651,43 @@ class HellaFusionLogic:
         # Check if we need to adjust Z height for next section
         z_different = abs(end_state['z'] - start_state['z']) > 0.001
         
-        # Calculate nozzle height delta for G92 Z offset
+        # Calculate nozzle height delta for G92 Z offset compensation
         prev_nozzle_height = prev_section.get('nozzle_height', 0.0)
         next_nozzle_height = next_section.get('nozzle_height', 0.0)
         delta_nozzle = prev_nozzle_height - next_nozzle_height
+        has_nozzle_offset = abs(delta_nozzle) > 0.001  # Meaningful difference threshold
         
+        # Helper function to add G92 Z offset if needed
+        def add_nozzle_offset(current_z: float) -> None:
+            """Add G92 Z command to compensate for nozzle height difference.
+            Only adds the command if Expert Settings are enabled in the UI."""
+            # Only add G92 Z offset if expert settings are enabled
+            if has_nozzle_offset and self._expert_settings_enabled:
+                adjusted_z = current_z + delta_nozzle
+                transition.append(f"G92 Z{adjusted_z:.3f} ; Adjust Z for nozzle height difference ({delta_nozzle:+.2f}mm)\n")
+        
+        # Generate movement commands based on the transition type
         if z_different and self._script_hop_height > 0:
-            # Z-hop enabled and Z changes between sections
-            # Hop above BOTH the end Z and start Z to avoid collision
+            # Case 1: Z-hop enabled with Z height change
+            # Hop above BOTH end and start Z to avoid collision during travel
             z_hop = max(end_state['z'], start_state['z']) + self._script_hop_height
             transition.append(f"G0 F{self._speed_z_hop} Z{z_hop:.3f} ; Hop up for travel\n")
-            # Always include XY travel during Z-hop (even if XY is nearly identical)
-            # This ensures consistent gcode and proper positioning
+            add_nozzle_offset(z_hop)  # Apply nozzle offset at hop height
             transition.append(f"G0 F{self._speed_travel} X{start_state['x']:.3f} Y{start_state['y']:.3f} ; Travel to next position\n")
-            # Lower to next section's starting Z height
             transition.append(f"G0 F{self._speed_z_hop} Z{start_state['z']:.3f} ; Lower to next section height\n")
+            
         elif z_different:
-            # No Z-hop enabled, but Z needs adjustment
+            # Case 2: Z height change without Z-hop
+            add_nozzle_offset(end_state['z'])  # Apply nozzle offset before Z move
             transition.append(f"G0 F{self._speed_z_hop} Z{start_state['z']:.3f} ; Move to next section height\n")
-            # Include XY travel if positions differ
             if xy_different:
                 transition.append(f"G0 F{self._speed_travel} X{start_state['x']:.3f} Y{start_state['y']:.3f} ; Travel to next position\n")
+                
         elif xy_different:
-            # Same Z height: just travel XY (no Z-hop needed for same layer)
+            # Case 3: Same Z height, only XY travel needed
+            add_nozzle_offset(start_state['z'])  # Apply nozzle offset at current height
             transition.append(f"G0 F{self._speed_travel} X{start_state['x']:.3f} Y{start_state['y']:.3f} ; Travel to next position\n")
 
-        # Apply nozzle height adjustment if different nozzles
-        if abs(delta_nozzle) > 0.001:  # Only add G92 if there's a meaningful difference
-            adjusted_z_hop = z_hop + delta_nozzle
-            transition.append(f"G92 Z{adjusted_z_hop:.3f} ; Adjust Z for nozzle height difference ({delta_nozzle:+.2f}mm)\n")
         
         # Handle priming AFTER travel movements (if needed)
         if filament_decision['needs_prime']:
