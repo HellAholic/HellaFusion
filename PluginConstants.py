@@ -609,7 +609,7 @@ M82                                   ; Absolute extrusion mode
                     <li>💀<b><i>"Ive seen better.  Im pretty sure I have.  I cant remember when, but I must have."</i></b> - Greg Valiant (sitting next to the random sot.)</li>
                     <li>​🤖​<b><i>"Does not compute.  Does not compute."</i></b> - HAL 9000</li>
                     <li>​👽​<b><i>"Take me to your leader.  I want to show him this HellaFusion thingy."</i></b> - Alien visitor from the planet Zog.</li>
-                    <li>​🔥​<b><i>"I blame Greg!"</i></b> - HellAholic</li>
+                    <li>​🔥​<b><i>"I blame Jelle, Casper 👻, and Greg!"</i></b> - HellAholic</li>
                 </ul>
                 <p>
                 <b>📍 Please Note:</b> The same model(s) on your build plate are used for all sections - only the slicing settings change to create the fusion effect.</p>
