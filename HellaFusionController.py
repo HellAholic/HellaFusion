@@ -43,6 +43,8 @@ class HellaFusionController(QObject):
         super().__init__()
         self._quality_profiles = []
         self._profile_service = ProfileSwitchingService()
+        self._is_loading_profiles = False  # Guard flag to prevent simultaneous loads
+        self._reload_timer = None  # Timer for debouncing reload requests
 
         # Connect to machine change signals for automatic profile reloading
         self._connectMachineChangeSignals()
@@ -174,9 +176,27 @@ class HellaFusionController(QObject):
             Logger.log("e", message)
     
     def _loadQualityProfilesAsync(self):
-        """Load quality profiles asynchronously to avoid blocking the UI."""
-        self._logMessage("Loading quality profiles...")
-        QTimer.singleShot(100, self._loadQualityProfiles)
+        """Load quality profiles asynchronously with debouncing to avoid blocking the UI.
+        
+        Debouncing ensures that multiple rapid reload requests (e.g., during Cura startup
+        when many containers are added) are collapsed into a single load operation.
+        """
+        # If a load is already in progress, ignore new requests
+        if self._is_loading_profiles:
+            return
+        
+        # Cancel any pending reload timer
+        if self._reload_timer is not None:
+            try:
+                self._reload_timer.stop()
+            except:
+                pass
+
+        # Create new timer for debounced reload (1 second delay)
+        self._reload_timer = QTimer()
+        self._reload_timer.setSingleShot(True)
+        self._reload_timer.timeout.connect(self._loadQualityProfiles)
+        self._reload_timer.start(1000)  # Wait 1 second for more requests before loading
     
     def _connectMachineChangeSignals(self):
         """Connect to machine change signals to automatically update quality profiles."""
@@ -212,9 +232,8 @@ class HellaFusionController(QObject):
     def _onMachineChanged(self):
         """Handle machine change events by refreshing quality profiles."""
         try:
-            Logger.log("i", "Machine or profile configuration changed - automatically reloading quality profiles")
-            # Use a short delay to allow Cura to finish updating its internal state
-            QTimer.singleShot(500, self._loadQualityProfiles)
+            # Use debounced async reload to handle multiple rapid machine changes
+            self._loadQualityProfilesAsync()
 
         except Exception as e:
             Logger.log("e", f"Error handling machine change: {e}")
@@ -226,10 +245,8 @@ class HellaFusionController(QObject):
             if container and hasattr(container, 'getMetaDataEntry'):
                 container_type = container.getMetaDataEntry("type", "")
                 if container_type == "quality_changes":
-                    container_name = container.getName() if hasattr(container, 'getName') else "Unknown"
-                    Logger.log("i", f"New quality profile '{container_name}' saved - automatically reloading")
-                    # Use a short delay to allow Cura to finish updating
-                    QTimer.singleShot(500, self._loadQualityProfiles)
+                    # Use debounced async reload to batch multiple container additions
+                    self._loadQualityProfilesAsync()
 
         except Exception as e:
             Logger.log("w", f"Error handling container added: {e}")
@@ -241,10 +258,8 @@ class HellaFusionController(QObject):
             if container and hasattr(container, 'getMetaDataEntry'):
                 container_type = container.getMetaDataEntry("type", "")
                 if container_type == "quality_changes":
-                    container_name = container.getName() if hasattr(container, 'getName') else "Unknown"
-                    Logger.log("i", f"Quality profile '{container_name}' updated - automatically reloading")
-                    # Use a short delay to allow Cura to finish updating
-                    QTimer.singleShot(500, self._loadQualityProfiles)
+                    # Use debounced async reload to batch multiple metadata changes
+                    self._loadQualityProfilesAsync()
 
         except Exception as e:
             Logger.log("w", f"Error handling container metadata changed: {e}")
@@ -271,7 +286,14 @@ class HellaFusionController(QObject):
 
     def _loadQualityProfiles(self):
         """Load available quality profiles using the proper Cura API (from AutoSlicer)."""
+        # Prevent simultaneous loading
+        if self._is_loading_profiles:
+            return
+
         try:
+            self._is_loading_profiles = True
+            self._logMessage("Loading quality profiles...")
+            
             application = CuraApplication.getInstance()
             global_stack = application.getGlobalContainerStack()
             
@@ -517,6 +539,10 @@ class HellaFusionController(QObject):
             import traceback
             traceback.print_exc()
             self._logMessage("Failed to load quality profiles.", is_error=True)
+        
+        finally:
+            # Always reset the loading flag
+            self._is_loading_profiles = False
 
     def calculateTransitionAdjustments(self, transitions):
         """

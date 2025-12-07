@@ -42,11 +42,6 @@ class PluginConstants:
     DEFAULT_LAYER_HEIGHT = 0.2  # mm - fallback when layer height can't be determined
     REMOVE_TEMP_FILES = True  # Whether to remove temporary files after processing
     
-    # Precision constants
-    LAYER_ALIGNMENT_TOLERANCE = 0.02  # mm
-    PERFECT_ALIGNMENT_THRESHOLD = 0.001  # mm
-    Z_POSITION_PRECISION = 6  # decimal places
-    
     # Intelligent priming constants
     PRIME_LONG_TRAVEL_THRESHOLD = 50.0  # mm - XY travel distance considered "long"
     PRIME_LONG_TIME_THRESHOLD = 5.0  # seconds - travel time considered "long"
@@ -59,10 +54,6 @@ class PluginConstants:
     PRIME_TRAVEL_ADJUSTMENT_FACTOR = 500  # denominator for travel distance adjustment
     PRIME_TIME_ADJUSTMENT_FACTOR = 50  # denominator for travel time adjustment
     PRIME_Z_ADJUSTMENT_FACTOR = 100  # denominator for Z change adjustment
-    
-    # Validation constants
-    MIN_MODEL_HEIGHT = 0.1  # mm - minimum acceptable model height
-    MAX_TRANSITIONS = 20  # maximum number of transitions allowed
     
     DARK_BACKGROUND_COLOR = "#2d2d2d"
     BACKGROUND_COLOR = "#2d2d2d"

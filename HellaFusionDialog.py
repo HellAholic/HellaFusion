@@ -40,7 +40,7 @@ class HellaFusionDialog(QDialog):
     """Main dialog for the HellaFusion plugin."""
     
     # Signals
-    startProcessing = pyqtSignal(str, list, int, object, bool)  # dest_folder, transitions, timeout, calculated_transitions, expert_settings_enabled
+    startProcessing = pyqtSignal(str, list, int, object, dict)  # dest_folder, transitions, timeout, calculated_transitions, settings_dict
     stopProcessing = pyqtSignal()
     
     def __init__(self, parent=None):
@@ -311,9 +311,114 @@ class HellaFusionDialog(QDialog):
         
         transitions_tab.setLayout(transitions_tab_layout)
         
+        # ===== TAB 3: Settings =====
+        settings_tab = QWidget()
+        settings_tab_layout = QVBoxLayout()
+        settings_tab_layout.setContentsMargins(10, 10, 10, 10)
+        settings_tab_layout.setSpacing(10)
+        
+        # File Management Settings Group
+        file_mgmt_group = QGroupBox("File Management")
+        file_mgmt_group.setStyleSheet(PluginConstants.GROUPBOX_STYLE)
+        file_mgmt_layout = QVBoxLayout()
+        file_mgmt_layout.setSpacing(8)
+        
+        # Remove temp files checkbox
+        self._remove_temp_files_check = QCheckBox("Remove temporary files after processing")
+        self._remove_temp_files_check.setChecked(PluginConstants.REMOVE_TEMP_FILES)
+        self._remove_temp_files_check.setStyleSheet(PluginConstants.CHECKBOX_STYLE)
+        self._remove_temp_files_check.setToolTip("Automatically delete temporary sliced files after successful fusion")
+        self._remove_temp_files_check.stateChanged.connect(self._saveSettings)
+        file_mgmt_layout.addWidget(self._remove_temp_files_check)
+        
+        # Temp file path
+        temp_path_layout = QHBoxLayout()
+        temp_path_label = QLabel("Temporary files location:")
+        temp_path_label.setStyleSheet(PluginConstants.LABEL_STYLE)
+        temp_path_label.setFixedWidth(180)
+        self._temp_file_path_edit = QLineEdit()
+        self._temp_file_path_edit.setPlaceholderText("System temp directory (default)")
+        self._temp_file_path_edit.setStyleSheet(PluginConstants.LINE_EDIT_STYLE)
+        self._temp_file_path_edit.setToolTip("Directory where temporary files are stored during processing (leave empty for system temp)")
+        self._temp_file_path_edit.textChanged.connect(self._saveSettings)
+        self._temp_path_browse_btn = QPushButton("Browse...")
+        self._temp_path_browse_btn.setStyleSheet(PluginConstants.SECONDARY_BUTTON_STYLE)
+        self._temp_path_browse_btn.setToolTip("Select temporary files directory")
+        self._temp_path_browse_btn.clicked.connect(self._onBrowseTempPath)
+        self._temp_path_browse_btn.setMaximumWidth(100)
+        temp_path_layout.addWidget(temp_path_label)
+        temp_path_layout.addSpacing(30)
+        temp_path_layout.addWidget(self._temp_file_path_edit)
+        temp_path_layout.addWidget(self._temp_path_browse_btn)
+        file_mgmt_layout.addLayout(temp_path_layout)
+        
+        # Temp file prefix
+        temp_prefix_layout = QHBoxLayout()
+        temp_prefix_label = QLabel("Temporary file prefix:")
+        temp_prefix_label.setStyleSheet(PluginConstants.LABEL_STYLE)
+        temp_prefix_label.setFixedWidth(180)
+        self._temp_file_prefix_edit = QLineEdit(PluginConstants.TEMP_FILE_PREFIX)
+        self._temp_file_prefix_edit.setStyleSheet(PluginConstants.LINE_EDIT_STYLE)
+        self._temp_file_prefix_edit.setToolTip("Prefix used for temporary files during processing")
+        self._temp_file_prefix_edit.textChanged.connect(self._saveSettings)
+        temp_prefix_layout.addWidget(temp_prefix_label)
+        temp_prefix_layout.addSpacing(30)
+        temp_prefix_layout.addWidget(self._temp_file_prefix_edit)
+        file_mgmt_layout.addLayout(temp_prefix_layout)
+        
+        # Output file suffix
+        output_suffix_layout = QHBoxLayout()
+        output_suffix_label = QLabel("Output file suffix:")
+        output_suffix_label.setStyleSheet(PluginConstants.LABEL_STYLE)
+        output_suffix_label.setFixedWidth(180)
+        self._output_file_suffix_edit = QLineEdit(PluginConstants.OUTPUT_FILE_SUFFIX)
+        self._output_file_suffix_edit.setStyleSheet(PluginConstants.LINE_EDIT_STYLE)
+        self._output_file_suffix_edit.setToolTip("Suffix appended to output file name (e.g., model_hellafused_20231207.gcode)")
+        self._output_file_suffix_edit.textChanged.connect(self._saveSettings)
+        output_suffix_layout.addWidget(output_suffix_label)
+        output_suffix_layout.addSpacing(30)
+        output_suffix_layout.addWidget(self._output_file_suffix_edit)
+        file_mgmt_layout.addLayout(output_suffix_layout)
+        
+        file_mgmt_group.setLayout(file_mgmt_layout)
+        settings_tab_layout.addWidget(file_mgmt_group)
+        
+        # UI Behavior Settings Group
+        ui_behavior_group = QGroupBox("UI Behavior")
+        ui_behavior_group.setStyleSheet(PluginConstants.GROUPBOX_STYLE)
+        ui_behavior_layout = QVBoxLayout()
+        ui_behavior_layout.setSpacing(8)
+        
+        # Hide Calculate Transitions button
+        self._hide_calculate_button_check = QCheckBox("Hide 'Calculate Transitions' button")
+        self._hide_calculate_button_check.setChecked(False)
+        self._hide_calculate_button_check.setStyleSheet(PluginConstants.CHECKBOX_STYLE)
+        self._hide_calculate_button_check.setToolTip("Hide the Calculate Transitions button (auto-calculation will still occur)")
+        self._hide_calculate_button_check.stateChanged.connect(self._onHideCalculateButtonChanged)
+        ui_behavior_layout.addWidget(self._hide_calculate_button_check)
+        
+        ui_behavior_group.setLayout(ui_behavior_layout)
+        settings_tab_layout.addWidget(ui_behavior_group)
+        
+        # Add stretch to push everything to the top
+        settings_tab_layout.addStretch()
+        
+        # Reset to Defaults button
+        reset_defaults_layout = QHBoxLayout()
+        reset_defaults_layout.addStretch()
+        self._reset_defaults_btn = QPushButton("Reset to Defaults")
+        self._reset_defaults_btn.setStyleSheet(PluginConstants.SECONDARY_BUTTON_STYLE)
+        self._reset_defaults_btn.setToolTip("Reset all settings to their default values")
+        self._reset_defaults_btn.clicked.connect(self._onResetDefaultsClicked)
+        reset_defaults_layout.addWidget(self._reset_defaults_btn)
+        settings_tab_layout.addLayout(reset_defaults_layout)
+        
+        settings_tab.setLayout(settings_tab_layout)
+        
         # Add tabs to tab widget
         self._tab_widget.addTab(config_tab, "Configuration & Control")
         self._tab_widget.addTab(transitions_tab, "Transitions & Sections")
+        self._tab_widget.addTab(settings_tab, "Settings")
         
         layout.addWidget(self._tab_widget)
         
@@ -911,8 +1016,8 @@ class HellaFusionDialog(QDialog):
             self._onCalculateTransitionsClicked()
         
         slice_timeout = self._slice_timeout_spin.value()
-        expert_settings_enabled = self._expert_settings_checkbox.isChecked()
-        self.startProcessing.emit(dest_folder, transitions, slice_timeout, self._calculated_transitions, expert_settings_enabled)
+        settings_dict = self._getCurrentSettings()
+        self.startProcessing.emit(dest_folder, transitions, slice_timeout, self._calculated_transitions, settings_dict)
     
     def _collectTransitions(self):
         """Collect all transition definitions from the UI."""
@@ -1071,8 +1176,14 @@ class HellaFusionDialog(QDialog):
         self._dest_folder_edit.blockSignals(True)
         self._slice_timeout_spin.blockSignals(True)
         self._expert_settings_checkbox.blockSignals(True)
+        self._remove_temp_files_check.blockSignals(True)
+        self._temp_file_path_edit.blockSignals(True)
+        self._temp_file_prefix_edit.blockSignals(True)
+        self._output_file_suffix_edit.blockSignals(True)
+        self._hide_calculate_button_check.blockSignals(True)
         
         try:
+            # Basic settings
             if 'dest_folder' in settings:
                 self._dest_folder_edit.setText(settings['dest_folder'])
             if 'slice_timeout' in settings:
@@ -1082,11 +1193,32 @@ class HellaFusionDialog(QDialog):
                 self._expert_settings_checkbox.setChecked(settings['expert_settings_enabled'])
                 # Trigger the visibility toggle manually (since signals are blocked)
                 self._onExpertSettingsToggled(Qt.CheckState.Checked.value if settings['expert_settings_enabled'] else Qt.CheckState.Unchecked.value)
+            
+            # File management settings
+            if 'remove_temp_files' in settings:
+                self._remove_temp_files_check.setChecked(settings['remove_temp_files'])
+            if 'temp_file_path' in settings:
+                self._temp_file_path_edit.setText(settings['temp_file_path'])
+            if 'temp_file_prefix' in settings:
+                self._temp_file_prefix_edit.setText(settings['temp_file_prefix'])
+            if 'output_file_suffix' in settings:
+                self._output_file_suffix_edit.setText(settings['output_file_suffix'])
+            
+            # UI behavior settings
+            if 'hide_calculate_button' in settings:
+                self._hide_calculate_button_check.setChecked(settings['hide_calculate_button'])
+                self._onHideCalculateButtonChanged(Qt.CheckState.Checked.value if settings['hide_calculate_button'] else Qt.CheckState.Unchecked.value)
+                
         finally:
             # Re-enable signals
             self._dest_folder_edit.blockSignals(False)
             self._slice_timeout_spin.blockSignals(False)
             self._expert_settings_checkbox.blockSignals(False)
+            self._remove_temp_files_check.blockSignals(False)
+            self._temp_file_path_edit.blockSignals(False)
+            self._temp_file_prefix_edit.blockSignals(False)
+            self._output_file_suffix_edit.blockSignals(False)
+            self._hide_calculate_button_check.blockSignals(False)
         
         # Update model info on load
         self._updateModelInfo()
@@ -1102,10 +1234,35 @@ class HellaFusionDialog(QDialog):
         settings = {
             'dest_folder': self._dest_folder_edit.text(),
             'slice_timeout': self._slice_timeout_spin.value(),
-            'expert_settings_enabled': self._expert_settings_checkbox.isChecked()
+            'expert_settings_enabled': self._expert_settings_checkbox.isChecked(),
+            # File management settings
+            'remove_temp_files': self._remove_temp_files_check.isChecked(),
+            'temp_file_path': self._temp_file_path_edit.text(),
+            'temp_file_prefix': self._temp_file_prefix_edit.text(),
+            'output_file_suffix': self._output_file_suffix_edit.text(),
+            # UI behavior settings
+            'hide_calculate_button': self._hide_calculate_button_check.isChecked()
         }
         
         self._controller.saveSettings(settings)
+    
+    def _getCurrentSettings(self):
+        """Get current settings as a dictionary for passing to Job.
+        
+        Returns:
+            dict: Dictionary containing all current settings
+        """
+        return {
+            # Use the Configuration tab checkbox for expert settings
+            'expert_settings_enabled': self._expert_settings_checkbox.isChecked(),
+            # File management settings
+            'remove_temp_files': self._remove_temp_files_check.isChecked(),
+            'temp_file_path': self._temp_file_path_edit.text(),
+            'temp_file_prefix': self._temp_file_prefix_edit.text(),
+            'output_file_suffix': self._output_file_suffix_edit.text(),
+            # UI behavior settings
+            'hide_calculate_button': self._hide_calculate_button_check.isChecked()
+        }
     
     def _connectSceneSignals(self):
         """Connect to scene change signals to update model info."""
@@ -1271,6 +1428,83 @@ class HellaFusionDialog(QDialog):
         """Show the help dialog."""
         dialog = HelpDialog(self.help_content, parent=self)
         dialog.exec()
+    
+    def _onHideCalculateButtonChanged(self, state):
+        """Handle hide calculate button checkbox toggle."""
+        hide_button = (state == Qt.CheckState.Checked.value)
+        self._calculate_transitions_btn.setVisible(not hide_button)
+        self._saveSettings()
+    
+    def _onBrowseTempPath(self):
+        """Handle temp path browse button click."""
+        from PyQt6.QtWidgets import QFileDialog
+        
+        # Get current path or use home directory
+        current_path = self._temp_file_path_edit.text()
+        if not current_path:
+            import os
+            current_path = os.path.expanduser("~")
+        
+        # Open directory selection dialog
+        selected_dir = QFileDialog.getExistingDirectory(
+            self,
+            "Select Temporary Files Directory",
+            current_path,
+            QFileDialog.Option.ShowDirsOnly
+        )
+        
+        if selected_dir:
+            self._temp_file_path_edit.setText(selected_dir)
+    
+    def _onResetDefaultsClicked(self):
+        """Reset all settings to their default values."""
+        msg_box = QMessageBox(self)
+        msg_box.setIcon(QMessageBox.Icon.Question)
+        msg_box.setWindowTitle('Reset to Defaults')
+        msg_box.setText('Are you sure you want to reset all settings to their default values?\n\nThis cannot be undone.')
+        msg_box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        msg_box.setDefaultButton(QMessageBox.StandardButton.No)
+        msg_box.setStyleSheet(PluginConstants.MESSAGE_BOX_STYLE)
+        
+        reply = msg_box.exec()
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            # Block signals during reset
+            self._remove_temp_files_check.blockSignals(True)
+            self._temp_file_path_edit.blockSignals(True)
+            self._temp_file_prefix_edit.blockSignals(True)
+            self._output_file_suffix_edit.blockSignals(True)
+            self._hide_calculate_button_check.blockSignals(True)
+            
+            try:
+                # Reset file management settings
+                self._remove_temp_files_check.setChecked(PluginConstants.REMOVE_TEMP_FILES)
+                self._temp_file_path_edit.clear()  # Empty = use system temp
+                self._temp_file_prefix_edit.setText(PluginConstants.TEMP_FILE_PREFIX)
+                self._output_file_suffix_edit.setText(PluginConstants.OUTPUT_FILE_SUFFIX)
+                
+                # Reset UI behavior settings
+                self._hide_calculate_button_check.setChecked(False)
+                self._calculate_transitions_btn.setVisible(True)
+                
+            finally:
+                # Re-enable signals
+                self._remove_temp_files_check.blockSignals(False)
+                self._temp_file_path_edit.blockSignals(False)
+                self._temp_file_prefix_edit.blockSignals(False)
+                self._output_file_suffix_edit.blockSignals(False)
+                self._hide_calculate_button_check.blockSignals(False)
+            
+            # Save the reset settings
+            self._saveSettings()
+            
+            # Show confirmation
+            info_box = QMessageBox(self)
+            info_box.setIcon(QMessageBox.Icon.Information)
+            info_box.setWindowTitle('Settings Reset')
+            info_box.setText('All settings have been reset to their default values.')
+            info_box.setStyleSheet(PluginConstants.MESSAGE_BOX_STYLE)
+            info_box.exec()
     
     def closeEvent(self, event):
         """Handle dialog close event."""

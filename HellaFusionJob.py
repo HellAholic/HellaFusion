@@ -44,14 +44,20 @@ class HellaFusionJob(Job):
     
     statusChanged = Signal()
     
-    def __init__(self, destination_folder: str, transitions: list, slice_timeout: int = 300, calculated_transitions: list = None, expert_settings_enabled: bool = False) -> None:
+    def __init__(self, destination_folder: str, transitions: list, slice_timeout: int = 300, calculated_transitions: list = None, settings_dict: dict = None) -> None:
         super().__init__()
         
         self._destination_folder = destination_folder
         self._transitions = transitions
         self._slice_timeout = slice_timeout
         self._calculated_transitions = calculated_transitions or []
-        self._expert_settings_enabled = expert_settings_enabled
+        
+        # Store settings with defaults from PluginConstants if not provided
+        self._settings = settings_dict or {}
+        self._expert_settings_enabled = self._settings.get('expert_settings_enabled', False)
+        self._remove_temp_files = self._settings.get('remove_temp_files', PluginConstants.REMOVE_TEMP_FILES)
+        self._temp_file_prefix = self._settings.get('temp_file_prefix', PluginConstants.TEMP_FILE_PREFIX)
+        self._output_file_suffix = self._settings.get('output_file_suffix', PluginConstants.OUTPUT_FILE_SUFFIX)
         
         # State management
         self._state_manager = JobStateManager()
@@ -528,9 +534,9 @@ class HellaFusionJob(Job):
             if model_name.lower().endswith(('.stl', '.obj', '.3mf', '.ply', '.gcode')):
                 model_name = os.path.splitext(model_name)[0]
             
-            # Create output filename
+            # Create output filename using configured suffix
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            output_filename = f"{model_name}_spliced_{timestamp}.gcode"
+            output_filename = f"{model_name}{self._output_file_suffix}{timestamp}.gcode"
             output_path = os.path.join(self._destination_folder, output_filename)
             
             # Validate output directory
@@ -650,7 +656,7 @@ class HellaFusionJob(Job):
             Logger.log("w", f"Signal cleanup error: {e}")
         
         # 2. Clean up temporary files
-        if PluginConstants.REMOVE_TEMP_FILES:
+        if self._remove_temp_files:
             files_deleted = 0
             for gcode_info in self._temp_gcode_files:
                 try:
