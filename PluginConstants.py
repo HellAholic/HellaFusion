@@ -55,6 +55,21 @@ class PluginConstants:
     PRIME_TIME_ADJUSTMENT_FACTOR = 50  # denominator for travel time adjustment
     PRIME_Z_ADJUSTMENT_FACTOR = 100  # denominator for Z change adjustment
     
+    # Default pause at transition gcode template
+    DEFAULT_PAUSE_GCODE = """;========== Pause before Transition ==========
+M83                                    ; Relative extrusion (required for E movements)
+G1 F2100 E-4.0                        ; Retract filament before parking
+G0 F2400 X0 Y0                        ; Park at X0 Y0 (edit coordinates as needed)
+M84 S6000                             ; Hold the steppers on for 6000 seconds
+M300                                  ; Beep to alert user
+M0                                    ; Pause command (works with most firmwares)
+G1 F200 E35                           ; Purge material after nozzle change
+G1 F200 E-4.0                         ; Retract after purge
+G4 S2                                 ; Wait 2 seconds for user to remove purge string
+; Note: Return position and final unretract will be added by HellaFusion
+M82                                   ; Absolute extrusion mode
+;========== Resume Printing =========="""
+    
     DARK_BACKGROUND_COLOR = "#2d2d2d"
     BACKGROUND_COLOR = "#2d2d2d"
     TEXT_COLOR = "#E0E0E0"
@@ -541,11 +556,14 @@ class PluginConstants:
     
     # Label Variants
     LABEL_STYLE_GRAY = f"{LABEL_STYLE}; color: #aaaaaa;"
+    LABEL_STYLE_MUTED = f"{LABEL_STYLE}; color: #aaaaaa;"  # Alias for help/hint text
+    LABEL_STYLE_HELP = f"{LABEL_STYLE}; color: #aaaaaa; font-style: italic;"  # For italic help text
     LABEL_STYLE_SUCCESS = f"{LABEL_STYLE}; color: #4CAF50;"
     LABEL_STYLE_WARNING = f"{LABEL_STYLE}; color: #FFA726;"
     LABEL_STYLE_ERROR = f"{LABEL_STYLE}; color: #F44336;"
     LABEL_STYLE_SECTION = f"{LABEL_STYLE}; font-weight: bold; min-width: 80px;"
     LABEL_STYLE_TRANSITION = f"{LABEL_STYLE}; color: #00912b; font-weight: bold; min-width: 120px;"
+    LABEL_STYLE_TITLE = f"{LABEL_STYLE}; font-size: 14px; font-weight: bold;"  # For dialog titles
 
     HELP_CONTENT = {
         "overview": {

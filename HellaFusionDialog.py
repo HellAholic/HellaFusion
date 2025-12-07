@@ -313,6 +313,20 @@ class HellaFusionDialog(QDialog):
         
         # ===== TAB 3: Settings =====
         settings_tab = QWidget()
+        settings_tab_main_layout = QVBoxLayout()
+        settings_tab_main_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Create scroll area for settings
+        settings_scroll = QScrollArea()
+        settings_scroll.setWidgetResizable(True)
+        settings_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        settings_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        settings_scroll.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        settings_scroll.setStyleSheet(PluginConstants.SCROLL_AREA_STYLE)
+        
+        # Container widget for scrollable content
+        settings_container = QWidget()
+        settings_container.setStyleSheet(PluginConstants.TRANSPARENT_WIDGET_STYLE)
         settings_tab_layout = QVBoxLayout()
         settings_tab_layout.setContentsMargins(10, 10, 10, 10)
         settings_tab_layout.setSpacing(10)
@@ -400,20 +414,97 @@ class HellaFusionDialog(QDialog):
         ui_behavior_group.setLayout(ui_behavior_layout)
         settings_tab_layout.addWidget(ui_behavior_group)
         
+        # Default Pause Settings Group
+        pause_settings_group = QGroupBox("Default Pause Settings")
+        pause_settings_group.setStyleSheet(PluginConstants.GROUPBOX_STYLE)
+        pause_settings_layout = QVBoxLayout()
+        pause_settings_layout.setSpacing(8)
+        
+        # Description label
+        pause_desc_label = QLabel(
+            "Configure the default pause gcode used for new transitions.\n"
+            "This gcode runs when the printer pauses for filament changes."
+        )
+        pause_desc_label.setStyleSheet(PluginConstants.LABEL_STYLE)
+        pause_desc_label.setWordWrap(True)
+        pause_settings_layout.addWidget(pause_desc_label)
+        
+        # Default pause gcode text editor
+        self._default_pause_gcode_edit = QTextEdit()
+        self._default_pause_gcode_edit.setPlainText(PluginConstants.DEFAULT_PAUSE_GCODE)
+        self._default_pause_gcode_edit.setStyleSheet(PluginConstants.LOG_STYLE)
+        self._default_pause_gcode_edit.setAcceptRichText(False)
+        self._default_pause_gcode_edit.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
+        self._default_pause_gcode_edit.setMaximumHeight(200)
+        self._default_pause_gcode_edit.setToolTip(
+            "Default gcode template for pause-at-transition.\n"
+            "This will be used when creating new transitions with pause enabled."
+        )
+        pause_settings_layout.addWidget(self._default_pause_gcode_edit)
+        
+        # Buttons for pause settings
+        pause_buttons_layout = QHBoxLayout()
+        
+        # Reset to Built-in Template button (left side)
+        self._restore_pause_default_btn = QPushButton("Reset to Built-in Template")
+        self._restore_pause_default_btn.setStyleSheet(PluginConstants.SECONDARY_BUTTON_STYLE)
+        self._restore_pause_default_btn.setToolTip("Reset to the plugin's original default pause gcode template")
+        self._restore_pause_default_btn.clicked.connect(self._onRestorePauseDefault)
+        pause_buttons_layout.addWidget(self._restore_pause_default_btn)
+        
+        pause_buttons_layout.addStretch()
+        
+        # Save button (right side)
+        self._save_pause_default_btn = QPushButton("Save")
+        self._save_pause_default_btn.setStyleSheet(PluginConstants.PRIMARY_BUTTON_STYLE)
+        self._save_pause_default_btn.setToolTip("Save the default pause gcode settings")
+        self._save_pause_default_btn.clicked.connect(self._onSavePauseDefault)
+        pause_buttons_layout.addWidget(self._save_pause_default_btn)
+        
+        pause_settings_layout.addLayout(pause_buttons_layout)
+        
+        pause_settings_group.setLayout(pause_settings_layout)
+        settings_tab_layout.addWidget(pause_settings_group)
+        
+        # Reset All Settings Section
+        reset_all_group = QGroupBox("Reset All Settings")
+        reset_all_group.setStyleSheet(PluginConstants.GROUPBOX_STYLE)
+        reset_all_layout = QVBoxLayout()
+        reset_all_layout.setSpacing(8)
+        
+        # Warning/explanation label
+        reset_warning_label = QLabel(
+            "Warning: This will reset ALL plugin settings to their default values. "
+            "This includes file paths, timeouts, pause settings, and all other configurations. "
+            "This action cannot be undone."
+        )
+        reset_warning_label.setStyleSheet(PluginConstants.LABEL_STYLE_WARNING)
+        reset_warning_label.setWordWrap(True)
+        reset_all_layout.addWidget(reset_warning_label)
+        
+        # Reset button
+        reset_button_layout = QHBoxLayout()
+        reset_button_layout.addStretch()
+        self._reset_defaults_btn = QPushButton("Reset All Settings to Defaults")
+        self._reset_defaults_btn.setStyleSheet(PluginConstants.SECONDARY_BUTTON_STYLE)
+        self._reset_defaults_btn.setToolTip("Reset all plugin settings to their default values")
+        self._reset_defaults_btn.clicked.connect(self._onResetDefaultsClicked)
+        reset_button_layout.addWidget(self._reset_defaults_btn)
+        reset_all_layout.addLayout(reset_button_layout)
+        
+        reset_all_group.setLayout(reset_all_layout)
+        settings_tab_layout.addWidget(reset_all_group)
+        
         # Add stretch to push everything to the top
         settings_tab_layout.addStretch()
         
-        # Reset to Defaults button
-        reset_defaults_layout = QHBoxLayout()
-        reset_defaults_layout.addStretch()
-        self._reset_defaults_btn = QPushButton("Reset to Defaults")
-        self._reset_defaults_btn.setStyleSheet(PluginConstants.SECONDARY_BUTTON_STYLE)
-        self._reset_defaults_btn.setToolTip("Reset all settings to their default values")
-        self._reset_defaults_btn.clicked.connect(self._onResetDefaultsClicked)
-        reset_defaults_layout.addWidget(self._reset_defaults_btn)
-        settings_tab_layout.addLayout(reset_defaults_layout)
+        # Set layout for container and add to scroll area
+        settings_container.setLayout(settings_tab_layout)
+        settings_scroll.setWidget(settings_container)
         
-        settings_tab.setLayout(settings_tab_layout)
+        # Add scroll area to main settings tab layout
+        settings_tab_main_layout.addWidget(settings_scroll)
+        settings_tab.setLayout(settings_tab_main_layout)
         
         # Add tabs to tab widget
         self._tab_widget.addTab(config_tab, "Configuration & Control")
@@ -526,6 +617,31 @@ class HellaFusionDialog(QDialog):
         height_spin.valueChanged.connect(self._onTransitionHeightChanged)
         transition_layout.addWidget(height_spin)
         
+        # Add spacing between height spin and pause checkbox
+        transition_layout.addSpacing(20)
+        
+        # Pause Here checkbox (visible only when expert settings enabled)
+        pause_checkbox = QCheckBox("Pause Here")
+        pause_checkbox.setStyleSheet(PluginConstants.CHECKBOX_STYLE)
+        pause_checkbox.setToolTip("Enable pause at this transition for nozzle change or filament swap")
+        pause_checkbox.setChecked(False)
+        pause_checkbox.stateChanged.connect(lambda state, tn=transition_number: self._onPauseCheckboxChanged(tn, state))
+        show_expert = self._expert_settings_checkbox.isChecked()
+        pause_checkbox.setVisible(show_expert)
+        transition_layout.addWidget(pause_checkbox)
+        
+        # Add spacing before pause settings button
+        transition_layout.addSpacing(10)
+        
+        # Pause Settings button (visible only when pause checkbox is checked)
+        pause_settings_btn = QPushButton("Pause Settings")
+        pause_settings_btn.setStyleSheet(PluginConstants.SECONDARY_BUTTON_STYLE)
+        pause_settings_btn.setToolTip("Configure pause gcode for this transition")
+        pause_settings_btn.setMaximumWidth(150)
+        pause_settings_btn.clicked.connect(lambda checked, tn=transition_number: self._onPauseSettingsClicked(tn))
+        pause_settings_btn.setVisible(False)  # Hidden until pause checkbox is checked
+        transition_layout.addWidget(pause_settings_btn)
+        
         transition_layout.addStretch()
         
         transition_widget.setLayout(transition_layout)
@@ -539,6 +655,9 @@ class HellaFusionDialog(QDialog):
             'height_spin': height_spin,
             'nozzle_height_label': None,  # Nozzle height is now on sections
             'nozzle_height_spin': None,  # Nozzle height is now on sections
+            'pause_checkbox': pause_checkbox,
+            'pause_settings_btn': pause_settings_btn,
+            'pause_gcode': self._default_pause_gcode_edit.toPlainText(),  # Use current default pause gcode
             'is_transition': True
         })
         
@@ -1023,6 +1142,7 @@ class HellaFusionDialog(QDialog):
         """Collect all transition definitions from the UI."""
         transitions = []
         current_height = 0.0
+        transition_pause_data = []  # Store pause data separately, aligned with transitions
         
         for row in self._transition_rows:
             if not row['is_transition']:
@@ -1046,11 +1166,24 @@ class HellaFusionDialog(QDialog):
                         'nozzle_height': nozzle_height
                     })
             else:
-                # This is a transition - update previous section's end height
+                # This is a transition - update previous section's end height and collect pause data
                 if transitions:
                     height = row['height_spin'].value()
                     transitions[-1]['end_height'] = height
                     current_height = height
+                    
+                    # Collect pause settings for this transition
+                    pause_enabled = row['pause_checkbox'].isChecked() if 'pause_checkbox' in row else False
+                    pause_gcode = row.get('pause_gcode', PluginConstants.DEFAULT_PAUSE_GCODE)
+                    
+                    transition_pause_data.append({
+                        'transition_number': row['transition_number'],
+                        'pause_enabled': pause_enabled,
+                        'pause_gcode': pause_gcode
+                    })
+        
+        # Store pause data for use by processing
+        self._transition_pause_data = transition_pause_data
         
         return transitions
     
@@ -1086,6 +1219,7 @@ class HellaFusionDialog(QDialog):
         self._dest_folder_edit.setEnabled(not is_processing)
         self._dest_browse_btn.setEnabled(not is_processing)
         self._slice_timeout_spin.setEnabled(not is_processing)
+        self._expert_settings_checkbox.setEnabled(not is_processing)
         self._add_transition_btn.setEnabled(not is_processing)
         self._remove_transition_btn.setEnabled(not is_processing and len([r for r in self._transition_rows if r['is_transition']]) > 0)
         self._update_profiles_btn.setEnabled(not is_processing)
@@ -1098,6 +1232,23 @@ class HellaFusionDialog(QDialog):
                 row['height_spin'].setEnabled(not is_processing)
             if row.get('nozzle_height_spin'):
                 row['nozzle_height_spin'].setEnabled(not is_processing)
+            # Disable pause controls
+            if row.get('pause_checkbox'):
+                row['pause_checkbox'].setEnabled(not is_processing)
+            if row.get('pause_settings_btn'):
+                row['pause_settings_btn'].setEnabled(not is_processing)
+        
+        # Disable settings tab controls
+        self._remove_temp_files_check.setEnabled(not is_processing)
+        self._temp_file_path_edit.setEnabled(not is_processing)
+        self._temp_path_browse_btn.setEnabled(not is_processing)
+        self._temp_file_prefix_edit.setEnabled(not is_processing)
+        self._output_file_suffix_edit.setEnabled(not is_processing)
+        self._hide_calculate_button_check.setEnabled(not is_processing)
+        self._default_pause_gcode_edit.setEnabled(not is_processing)
+        self._restore_pause_default_btn.setEnabled(not is_processing)
+        self._save_pause_default_btn.setEnabled(not is_processing)
+        self._reset_defaults_btn.setEnabled(not is_processing)
         
         # Update progress bar
         self._progress_bar.setVisible(is_processing)
@@ -1208,6 +1359,30 @@ class HellaFusionDialog(QDialog):
             if 'hide_calculate_button' in settings:
                 self._hide_calculate_button_check.setChecked(settings['hide_calculate_button'])
                 self._onHideCalculateButtonChanged(Qt.CheckState.Checked.value if settings['hide_calculate_button'] else Qt.CheckState.Unchecked.value)
+            
+            # Default pause gcode
+            if 'default_pause_gcode' in settings:
+                self._default_pause_gcode_edit.blockSignals(True)
+                self._default_pause_gcode_edit.setPlainText(settings['default_pause_gcode'])
+                self._default_pause_gcode_edit.blockSignals(False)
+            
+            # Pause settings - restore pause enabled state and custom gcode
+            if 'pause_settings' in settings:
+                pause_settings_list = settings['pause_settings']
+                for pause_data in pause_settings_list:
+                    transition_num = pause_data.get('transition_number')
+                    # Find corresponding transition row
+                    for row in self._transition_rows:
+                        if row['is_transition'] and row.get('transition_number') == transition_num:
+                            if 'pause_checkbox' in row:
+                                row['pause_checkbox'].blockSignals(True)
+                                row['pause_checkbox'].setChecked(pause_data.get('pause_enabled', False))
+                                row['pause_checkbox'].blockSignals(False)
+                                # Show/hide pause settings button based on checkbox state
+                                row['pause_settings_btn'].setVisible(pause_data.get('pause_enabled', False))
+                            # Restore custom pause gcode
+                            row['pause_gcode'] = pause_data.get('pause_gcode', PluginConstants.DEFAULT_PAUSE_GCODE)
+                            break
                 
         finally:
             # Re-enable signals
@@ -1231,6 +1406,16 @@ class HellaFusionDialog(QDialog):
         if hasattr(self, '_is_loading') and self._is_loading:
             return
             
+        # Collect pause settings from transitions
+        pause_settings = []
+        for row in self._transition_rows:
+            if row['is_transition']:
+                pause_settings.append({
+                    'transition_number': row['transition_number'],
+                    'pause_enabled': row['pause_checkbox'].isChecked() if 'pause_checkbox' in row else False,
+                    'pause_gcode': row.get('pause_gcode', PluginConstants.DEFAULT_PAUSE_GCODE)
+                })
+        
         settings = {
             'dest_folder': self._dest_folder_edit.text(),
             'slice_timeout': self._slice_timeout_spin.value(),
@@ -1241,7 +1426,10 @@ class HellaFusionDialog(QDialog):
             'temp_file_prefix': self._temp_file_prefix_edit.text(),
             'output_file_suffix': self._output_file_suffix_edit.text(),
             # UI behavior settings
-            'hide_calculate_button': self._hide_calculate_button_check.isChecked()
+            'hide_calculate_button': self._hide_calculate_button_check.isChecked(),
+            # Pause settings
+            'pause_settings': pause_settings,
+            'default_pause_gcode': self._default_pause_gcode_edit.toPlainText()
         }
         
         self._controller.saveSettings(settings)
@@ -1261,7 +1449,9 @@ class HellaFusionDialog(QDialog):
             'temp_file_prefix': self._temp_file_prefix_edit.text(),
             'output_file_suffix': self._output_file_suffix_edit.text(),
             # UI behavior settings
-            'hide_calculate_button': self._hide_calculate_button_check.isChecked()
+            'hide_calculate_button': self._hide_calculate_button_check.isChecked(),
+            # Pause at transition settings
+            'transition_pause_data': getattr(self, '_transition_pause_data', [])
         }
     
     def _connectSceneSignals(self):
@@ -1390,7 +1580,7 @@ class HellaFusionDialog(QDialog):
         self._saveSettings()
     
     def _onExpertSettingsToggled(self, state):
-        """Handle expert settings checkbox toggle - show/hide nozzle height fields."""
+        """Handle expert settings checkbox toggle - show/hide nozzle height fields and pause controls."""
         show_expert = (state == Qt.CheckState.Checked.value)
         
         # Show/hide nozzle height fields for all section rows (not transitions)
@@ -1400,6 +1590,12 @@ class HellaFusionDialog(QDialog):
                     row['nozzle_height_label'].setVisible(show_expert)
                 if 'nozzle_height_spin' in row and row['nozzle_height_spin']:
                     row['nozzle_height_spin'].setVisible(show_expert)
+            else:  # Transitions - show/hide pause checkbox
+                if 'pause_checkbox' in row and row['pause_checkbox']:
+                    row['pause_checkbox'].setVisible(show_expert)
+                    # If hiding and pause is checked, also hide the settings button
+                    if not show_expert:
+                        row['pause_settings_btn'].setVisible(False)
         
         # Save the expert settings state
         self._saveSettings()
@@ -1434,6 +1630,98 @@ class HellaFusionDialog(QDialog):
         hide_button = (state == Qt.CheckState.Checked.value)
         self._calculate_transitions_btn.setVisible(not hide_button)
         self._saveSettings()
+    
+    def _onRestorePauseDefault(self):
+        """Restore the default pause gcode template."""
+        msg_box = QMessageBox(self)
+        msg_box.setIcon(QMessageBox.Icon.Question)
+        msg_box.setWindowTitle('Reset to Built-in Template')
+        msg_box.setText('Reset to the plugin\'s built-in pause gcode template? This will replace your current default pause settings.')
+        msg_box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        msg_box.setDefaultButton(QMessageBox.StandardButton.No)
+        msg_box.setStyleSheet(PluginConstants.MESSAGE_BOX_STYLE)
+        
+        reply = msg_box.exec()
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            self._default_pause_gcode_edit.blockSignals(True)
+            self._default_pause_gcode_edit.setPlainText(PluginConstants.DEFAULT_PAUSE_GCODE)
+            self._default_pause_gcode_edit.blockSignals(False)
+            self._saveSettings()
+            
+            # Show confirmation
+            confirm_box = QMessageBox(self)
+            confirm_box.setIcon(QMessageBox.Icon.Information)
+            confirm_box.setWindowTitle('Template Reset')
+            confirm_box.setText('Default pause gcode has been reset to the built-in template.')
+            confirm_box.setStandardButtons(QMessageBox.StandardButton.Ok)
+            confirm_box.setStyleSheet(PluginConstants.MESSAGE_BOX_STYLE)
+            confirm_box.exec()
+    
+    def _onSavePauseDefault(self):
+        """Save the default pause gcode settings."""
+        self._saveSettings()
+        
+        # Show confirmation message
+        msg_box = QMessageBox(self)
+        msg_box.setIcon(QMessageBox.Icon.Information)
+        msg_box.setWindowTitle('Settings Saved')
+        msg_box.setText('Default pause gcode settings have been saved successfully.')
+        msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
+        msg_box.setStyleSheet(PluginConstants.MESSAGE_BOX_STYLE)
+        msg_box.exec()
+    
+    def _onPauseCheckboxChanged(self, transition_number, state):
+        """Handle pause checkbox toggle."""
+        # Find the transition row
+        for row in self._transition_rows:
+            if row['is_transition'] and row.get('transition_number') == transition_number:
+                # Show/hide pause settings button based on checkbox state
+                is_checked = (state == Qt.CheckState.Checked.value)
+                row['pause_settings_btn'].setVisible(is_checked)
+                self._saveSettings()
+                break
+    
+    def _onPauseSettingsClicked(self, transition_number):
+        """Handle pause settings button click."""
+        from .PauseSettingsDialog import PauseSettingsDialog
+        
+        # Find the transition row
+        for row in self._transition_rows:
+            if row['is_transition'] and row.get('transition_number') == transition_number:
+                # Get current pause gcode for this transition (fallback to custom default)
+                current_gcode = row.get('pause_gcode', self._default_pause_gcode_edit.toPlainText())
+                default_gcode = self._default_pause_gcode_edit.toPlainText()
+                
+                # Open pause settings dialog
+                dialog = PauseSettingsDialog(current_gcode, transition_number, self, default_gcode)
+                
+                # Connect signals
+                dialog.pauseGcodeChanged.connect(lambda gcode, tn=transition_number: self._onPauseSaved(tn, gcode))
+                dialog.pauseGcodeAppliedToAll.connect(self._onPauseAppliedToAll)
+                
+                dialog.exec()
+                break
+    
+    def _onPauseSaved(self, transition_number, gcode):
+        """Handle pause gcode saved for a specific transition."""
+        for row in self._transition_rows:
+            if row['is_transition'] and row.get('transition_number') == transition_number:
+                row['pause_gcode'] = gcode
+                self._saveSettings()
+                self._logMessage(f"Pause settings saved for Transition {transition_number}")
+                break
+    
+    def _onPauseAppliedToAll(self, gcode):
+        """Handle pause gcode applied to all transitions."""
+        count = 0
+        for row in self._transition_rows:
+            if row['is_transition']:
+                row['pause_gcode'] = gcode
+                count += 1
+        
+        self._saveSettings()
+        self._logMessage(f"Pause settings applied to all {count} transitions")
     
     def _onBrowseTempPath(self):
         """Handle temp path browse button click."""

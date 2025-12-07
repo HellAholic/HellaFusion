@@ -586,8 +586,11 @@ class HellaFusionJob(Job):
                 }
                 sections_data.append(section_data)
             
+            # Get pause settings from settings_dict
+            pause_data = self._settings.get('transition_pause_data', [])
+            
             # Combine gcode files using UNIFIED approach
-            success = self._logic.combineGcodeFiles(sections_data, output_path, self._calculated_transitions, self._expert_settings_enabled)
+            success = self._logic.combineGcodeFiles(sections_data, output_path, self._calculated_transitions, self._expert_settings_enabled, pause_data)
             
             if success:
                 # Verify output file was created

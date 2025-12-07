@@ -248,7 +248,7 @@ class HellaFusionLogic:
         
         return result
     
-    def combineGcodeFiles(self, sections_data: list, output_path: str, calculated_transitions: list = None, expert_settings_enabled: bool = False) -> bool:
+    def combineGcodeFiles(self, sections_data: list, output_path: str, calculated_transitions: list = None, expert_settings_enabled: bool = False, pause_data: list = None) -> bool:
         """Combine multiple gcode files into a single spliced file using TransitionData
         
         Args:
@@ -257,6 +257,7 @@ class HellaFusionLogic:
             calculated_transitions: REQUIRED - List of dicts from Controller containing '_transition_data' 
                                    (TransitionData objects from TransitionCalculator)
             expert_settings_enabled: Whether expert settings (like nozzle height G92) are enabled
+            pause_data: List of dicts with 'transition_number', 'pause_enabled', 'pause_gcode' for pausing at transitions
             
         Returns:
             True if successful, False otherwise
@@ -264,8 +265,9 @@ class HellaFusionLogic:
         Raises:
             ValueError: If calculated_transitions is missing or doesn't contain TransitionData objects
         """
-        # Store expert settings flag for use in transition generation
+        # Store expert settings flag and pause data for use in transition generation
         self._expert_settings_enabled = expert_settings_enabled
+        self._pause_data = pause_data or []
         try:
             # Pre-flight validation
             if calculated_transitions:
@@ -1188,6 +1190,18 @@ class HellaFusionLogic:
             # No need to set start states - each section has definitive start/end states from profile settings
             
             for i, section in enumerate(sections):
+                # Check if pause is enabled for this transition
+                if i > 0:
+                    transition_number = i  # Transition 1 is before Section 2, etc.
+                    pause_info = self._getPauseInfoForTransition(transition_number)
+                    
+                    if pause_info and pause_info['pause_enabled']:
+                        # Insert pause gcode before this section
+                        combined.append(f";========== PAUSE BEFORE SECTION {section['section_number']} ==========\n")
+                        combined.append(pause_info['pause_gcode'])
+                        if not pause_info['pause_gcode'].endswith('\n'):
+                            combined.append('\n')
+                
                 combined.append(f";========== SECTION {section['section_number']} START ==========\n")
                 
                 if i > 0:
@@ -1564,6 +1578,27 @@ class HellaFusionLogic:
         formatted_line += f"E{e:>13.5f}"
         
         return formatted_line + "\n"
+
+    def _getPauseInfoForTransition(self, transition_number: int) -> dict:
+        """Get pause information for a specific transition.
+        
+        Args:
+            transition_number: The transition number (1-based: transition 1 is before section 2)
+            
+        Returns:
+            Dict with 'pause_enabled' and 'pause_gcode', or None if not found
+        """
+        if not hasattr(self, '_pause_data') or not self._pause_data:
+            return None
+        
+        for pause_info in self._pause_data:
+            if pause_info.get('transition_number') == transition_number:
+                return {
+                    'pause_enabled': pause_info.get('pause_enabled', False),
+                    'pause_gcode': pause_info.get('pause_gcode', '')
+                }
+        
+        return None
 
     def _generateTransitionWithG92(self, prev_section: dict, next_section: dict, calculated_transitions: list = None) -> list:
         """Generate transition code between sections.
