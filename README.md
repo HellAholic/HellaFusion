@@ -43,11 +43,18 @@ This plugin is based on the excellent work of:
 - 📊 **Real-Time Progress**: Live status updates and detailed progress tracking
 - 💾 **Session Persistence**: Intelligent settings memory across sessions
 
+### **Expert Controls** 🔧
+- ⏸️ **Pause at Transition**: Insert pauses before transitions for nozzle changes, filament swaps, or color changes
+- 🎨 **Customizable Pause Gcode**: Edit pause behavior per transition with full gcode control
+- 🔩 **Nozzle Length Compensation**: Support for mid-print nozzle changes with automatic Z-offset adjustment
+- 📝 **Default Pause Templates**: Configure global pause defaults and apply to all transitions
+
 ### **User Experience**
 - 🖱️ **Intuitive Interface**: Clean, modern UI with comprehensive help system
 - ⚠️ **Smart Validation**: Real-time error detection and helpful guidance
-- 🔧 **Advanced Configuration**: Customizable timeouts and processing options
+- 🔧 **Advanced Configuration**: Customizable timeouts, file management, and processing options
 - 📋 **Detailed Logging**: Comprehensive processing logs for troubleshooting
+- 📜 **Scrollable Settings**: Organized settings tab with file management, UI behavior, and pause configuration
 
 ## 📦 Installation
 
@@ -75,8 +82,9 @@ This plugin is based on the excellent work of:
 4. **📏 Set Heights**: Enter Z-heights (mm) where you want quality transitions
 5. **🎨 Choose Profiles**: Select different quality profiles for each section
 6. **💾 Set Destination**: Choose output folder for your fused gcode
-7. **🧮 Calculate (Recommended)**: Click "Calculate Transitions" for optimal fusion
-8. **⚡ Start Fusion**: Hit "Start Splicing" to create your multi-quality masterpiece!
+7. **🔧 Expert Settings (Optional)**: Enable to access nozzle length fields and pause-at-transition features
+8. **🧮 Calculate (Recommended)**: Click "Calculate Transitions" for optimal fusion
+9. **⚡ Start Fusion**: Hit "Start Fusing" to create your multi-quality masterpiece!
 
 ### Understanding Sections
 
@@ -121,6 +129,22 @@ Each section can have its own quality profile with different:
 - **Section 3** (60-80mm): Draft intent → Speed optimization
 - **Result**: 🎯 Each section optimized for its specific purpose
 
+### 🎨 Example 4: Multi-Color Print with Pause
+**Model**: Trophy (120mm)
+- **Section 1** (0-40mm): Gold PLA base → Standard profile
+- **Pause & Filament Swap** at 40mm: Switch to silver PLA
+- **Section 2** (40-80mm): Silver PLA middle → Fine detail profile
+- **Pause & Filament Swap** at 80mm: Switch to black PLA
+- **Section 3** (80-120mm): Black PLA top → Ultra-fine profile
+- **Result**: 🏆 Multi-color trophy without MMU hardware
+
+### 🔩 Example 5: Mid-Print Nozzle Change
+**Model**: Functional part (60mm)
+- **Section 1** (0-30mm): 0.6mm nozzle → Fast, strong base (0.3mm layers)
+- **Pause & Nozzle Change** at 30mm: Switch to 0.4mm nozzle (with length compensation)
+- **Section 2** (30-60mm): 0.4mm nozzle → Fine threads and details (0.12mm layers)
+- **Result**: 🔧 Speed + precision in one print with automatic Z-offset adjustment
+
 ## Technical Details
 
 ### How It Works
@@ -143,24 +167,69 @@ At each transition, the plugin inserts:
 - **XY movement**: Moves to starting position of next section
 - **Z adjustment**: Sets Z height accounting for layer height changes
 - **E reset**: Synchronizes extrusion position (handles retraction state)
+- **Optional Pause**: When enabled, inserts customizable pause gcode before transition
+- **Nozzle Compensation**: When nozzle lengths differ, automatic Z-offset adjustment
 
-### Limitations
+### Expert Settings Features
+
+#### 🔧 Nozzle Length Compensation
+Enable "Show Expert Settings" to access nozzle length fields for each transition. If changing nozzles mid-print:
+- Measure the "stick out" length of each nozzle (from heat block surface to tip)
+- Enter these measurements in the nozzle length fields
+- HellaFusion automatically calculates Z-offset adjustments to maintain correct layer heights
+- Critical for both manual leveling and auto bed leveling (ABL) systems
+
+#### ⏸️ Pause at Transition
+Perfect for filament swaps, nozzle changes, or color changes:
+- **Per-Transition Control**: Check "Pause here" on any transition to insert a pause
+- **Custom Pause Gcode**: Click "Pause Settings" to edit the gcode for each transition
+- **Default Template**: Includes retract, park, M0 pause, purge, and wait time
+- **Global Defaults**: Configure default pause gcode in Settings tab
+- **Apply to All**: Quickly apply the same pause settings to all transitions
+- **Firmware Compatible**: Default uses M0, easily customizable for M25 or other pause commands
+
+### Limitations & Compatibility
 
 - **Print Sequence**: Not compatible with "One-at-a-Time" mode
 - **Adaptive Layers**: Can work but requires careful height selection
 - **Z-hops**: The plugin accounts for Z-hops but they can affect transition heights
-- **Pause at Height**: Can be used but may interfere with transition detection
+- **External Pause Scripts**: Built-in pause-at-transition feature replaces need for external pause scripts
 - **Multi-Extruder**: Currently optimized for single-extruder printing
+- **Nozzle Changes**: Requires precise measurement of nozzle stick-out lengths
+- **Material Compatibility**: When using pause for material changes, ensure materials are compatible (bed temperature, adhesion, etc.)
 
 ## Configuration
 
 ### Settings Saved
 
 The plugin saves the following settings between sessions:
-- Model file path
-- Destination folder
-- Slice timeout
-- Transition definitions (heights and profiles)
+- **Configuration & Control**: Model file path, destination folder, slice timeout
+- **Transitions**: Heights, profiles, nozzle lengths, pause settings per transition
+- **File Management**: Temp file location, cleanup preferences, file naming options
+- **UI Behavior**: Expert settings visibility, calculate button visibility
+- **Pause Settings**: Default pause gcode template
+
+### Settings Tab Organization
+
+The Settings tab is organized into distinct sections for easy configuration:
+
+#### **File Management**
+- **Remove temporary files after processing**: Auto-cleanup of temp files (default: enabled)
+- **Temporary files location**: Custom temp directory or system default
+- **Temporary file prefix**: Customize temp file naming (default: "hellafusion_temp_")
+- **Output file suffix**: Customize output file naming (default: "_hellafused")
+
+#### **UI Behavior**
+- **Hide Calculate Transitions button**: Reduce UI clutter (auto-calculation still works)
+
+#### **Default Pause Settings**
+- **Default Pause Gcode editor**: Configure the default pause gcode template
+- **Reset to Built-in Template**: Restore original pause template
+- **Save button**: Explicit confirmation of pause settings
+
+#### **Reset All Settings**
+- **⚠️ Warning section**: Clearly separated with border and warning message
+- **Reset All Settings to Defaults**: Nuclear option to restore all defaults
 
 ### Slice Timeout
 
@@ -168,6 +237,60 @@ The plugin saves the following settings between sessions:
 - Range: 30-3600 seconds
 - Purpose: Maximum time to wait for each slicing operation
 - Recommendation: Increase for complex models
+
+## 💡 Tips for Pause at Transition
+
+### When to Use Pauses
+
+**Perfect for:**
+- 🎨 **Multi-color prints**: Change filament colors without MMU hardware
+- 🔩 **Nozzle changes**: Switch from fast/large nozzle to precision/small nozzle
+- 🧪 **Material changes**: Combine compatible materials (PLA→PETG, add TPU sections, etc.)
+- 🛠️ **Hardware adjustments**: Pause to modify build plate, add supports, or inspect quality
+
+### Pause Settings Best Practices
+
+1. **Park Position**: 
+   - Default is `G0 X0 Y0` - edit to match your printer's safe position
+   - Consider: bed size, homing direction, cable management
+   - Example for center park: `G0 X150 Y150` (adjust for your bed size)
+
+2. **Purge Amount**:
+   - Default is `E35` (35mm of filament)
+   - Increase for: larger nozzles, color changes, material changes
+   - Decrease for: small nozzles, same-material swaps
+   - Example: 0.6mm nozzle with color change → `E50` or more
+
+3. **Firmware Commands**:
+   - Default uses `M0` (pause and wait for user)
+   - **Marlin**: `M0` or `M25` both work
+   - **RepRap**: `M0` or `M226`
+   - **Other firmware**: Check your firmware documentation
+
+4. **Retraction**:
+   - Default includes `G1 E-5 F300` (5mm retract before pause)
+   - Prevents oozing while printer is paused
+   - Adjust based on your bowden length and hotend
+
+### Measuring Nozzle Stick-Out
+
+**Required only for actual nozzle changes** (not just filament swaps):
+
+1. Use an old heat block as a reference gauge
+2. Tighten each nozzle into the heat block (properly seated)
+3. Measure from **heat block surface** to **nozzle tip** (not total length)
+4. Record this "stick out" measurement for each nozzle
+5. Enter these values in the "Nozzle Length" fields when expert settings are enabled
+6. HellaFusion calculates the Z-offset difference automatically
+
+**Why this matters**: Different stick-out lengths mean different nozzle heights. Without compensation, your layer heights will be wrong after a nozzle change, causing poor adhesion or nozzle crashes.
+
+### Testing Your Pause Setup
+
+1. **Test with a simple model first**: Use a small test print (10-20 minutes)
+2. **Verify park position is safe**: Ensure nozzle doesn't hit clips, cables, or bed edges
+3. **Check purge amount**: After resuming, watch first layer for under/over-extrusion
+4. **Time the process**: Factor pause time into total print time estimates
 
 ## Troubleshooting
 
@@ -194,6 +317,27 @@ The plugin saves the following settings between sessions:
 - Verify all sections sliced successfully
 - Check destination folder has write permissions
 
+### Pause not working or printer hangs
+- **Check firmware compatibility**: Try `M25` instead of `M0` in pause gcode
+- **LCD required**: Some firmwares need an LCD controller to resume from pause
+- **OctoPrint/USB**: Pauses work differently via OctoPrint - test from SD card first
+- **G-code preview**: Open fused gcode and search for "PAUSE" to verify insertion
+
+### Wrong layer height after nozzle change
+- **Nozzle length not set**: Enable expert settings and enter stick-out measurements
+- **Measurement error**: Re-measure nozzle stick-out from heat block to tip
+- **Z-offset needed**: Some printers may need additional baby-stepping after change
+
+### Under/over-extrusion after pause
+- **Adjust purge amount**: Edit pause gcode and change `E35` to match your needs
+- **Retraction settings**: Check that retract amount matches your printer profile
+- **Filament path**: Ensure filament feeds smoothly after swap
+
+### Settings not saving
+- **Check Cura config directory**: Ensure write permissions
+- **Settings location**: Windows: `%APPDATA%\cura\<version>\`
+- **Click Save button**: Use explicit Save in Default Pause Settings section
+
 ## Development
 
 ### File Structure
@@ -202,12 +346,14 @@ The plugin saves the following settings between sessions:
 hellafusionplugin/
 ├── __init__.py                 # Plugin registration
 ├── plugin.json                 # Plugin metadata
-├── HellaFusion.py            # Main extension class
-├── HellaFusionController.py  # Business logic
-├── HellaFusionDialog.py      # UI dialog
-├── HellaFusionJob.py         # Background processing job
-├── HellaFusionLogic.py       # Core splicing algorithms
-├── PluginConstants.py         # UI styling constants
+├── HellaFusion.py             # Main extension class
+├── HellaFusionController.py   # Business logic
+├── HellaFusionDialog.py       # UI dialog (main interface with tabs)
+├── HellaFusionJob.py          # Background processing job
+├── HellaFusionLogic.py        # Core splicing algorithms
+├── PauseSettingsDialog.py     # Pause gcode editor dialog
+├── HelpDialog.py              # Comprehensive help system
+├── PluginConstants.py         # UI styling and help content
 └── README.md                  # This file
 ```
 
@@ -219,6 +365,9 @@ Contributions are welcome! Areas for improvement:
 - Enhanced error recovery
 - Better visualization of transitions
 - Gcode preview integration
+- Advanced pause templates library
+- Material compatibility validation
+- Auto-detection of nozzle lengths
 
 ## License
 
@@ -236,13 +385,18 @@ This program is free software: you can redistribute it and/or modify it under th
 
 ## 📋 Version History
 
-### 🚀 1.0.0 (2025) - "Fusion Genesis"
+### 🚀 1.0.0 (December 2025) - "Fusion Genesis"
 - ✨ Revolutionary multi-quality fusion technology
 - 🎯 Unlimited transition support with intelligent alignment
 - 🧮 Advanced calculation engine for optimal layer fusion
 - 🎨 Modern UI with comprehensive help system
 - 💾 Intelligent settings persistence and session management
 - ⚡ Real-time progress tracking and validation
+- ⏸️ **NEW**: Pause-at-transition feature for filament/nozzle changes
+- 🔧 **NEW**: Expert settings with nozzle length compensation
+- 📝 **NEW**: Customizable pause gcode per transition
+- 🎛️ **NEW**: Comprehensive Settings tab with file management and UI behavior options
+- 📖 **NEW**: Enhanced help system with detailed guidance for all features
 
 ## 🆘 Support & Community
 

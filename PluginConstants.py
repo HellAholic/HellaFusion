@@ -608,6 +608,7 @@ M82                                   ; Absolute extrusion mode
                     <li>​👵​<b><i>"Holy Crap!  That is so friggin cool!!"</i></b> "Alright, I testified.  Now buy me that drink" - Some random sot at the end of the bar.</li>
                     <li>💀<b><i>"Ive seen better.  Im pretty sure I have.  I cant remember when, but I must have."</i></b> - Greg Valiant (sitting next to the random sot.)</li>
                     <li>​🤖​<b><i>"Does not compute.  Does not compute."</i></b> - HAL 9000</li>
+                    <li>​👩‍🚀​<b><i>"Everybody's dead, Dave... except for this plugin, which is very much alive."</i></b> - Holly, Red Dwarf</li>
                     <li>​👽​<b><i>"Take me to your leader.  I want to show him this HellaFusion thingy."</i></b> - Alien visitor from the planet Zog.</li>
                     <li>​🔥​<b><i>"I blame Jelle, Casper 👻, and Greg!"</i></b> - HellAholic</li>
                 </ul>
