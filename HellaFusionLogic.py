@@ -104,8 +104,13 @@ class HellaFusionLogic:
                     self._shrinkage_compensation_factor = float(global_stack.getProperty("material_shrinkage_percentage_z", "value"))
                     
                     # Convert from Cura format to actual values for plugin calculations
-                    self._layer_height = TransitionData.convert_from_cura(layer_height_raw, self._shrinkage_compensation_factor)
-                    self._initial_layer_height = TransitionData.convert_from_cura(initial_layer_height_raw, self._shrinkage_compensation_factor)
+                    # Handle potential import timing issues during module initialization
+                    try:
+                        self._layer_height = TransitionData.convert_from_cura(layer_height_raw, self._shrinkage_compensation_factor)
+                        self._initial_layer_height = TransitionData.convert_from_cura(initial_layer_height_raw, self._shrinkage_compensation_factor)
+                    except AttributeError:
+                        self._layer_height = layer_height_raw
+                        self._initial_layer_height = initial_layer_height_raw
                     
                     self._script_hop_height = extruders[0].getProperty("machine_nozzle_size", "value") / 2
         except Exception as e:
@@ -1620,9 +1625,6 @@ class HellaFusionLogic:
             "Next section starts at",
             start_state['x'], start_state['y'], start_state['z'], start_state['e']
         ))
-        
-        # Handle retraction state - we'll prime AFTER travel, store the state for now
-        prev_retracted = prev_section['is_retracted_at_end']
         
         # Handle Z-hop and travel moves
         # NOTE: With smart layer alignment, extracted sections include their own Z moves
