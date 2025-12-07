@@ -28,7 +28,7 @@ class HelpDialog(QDialog):
         super().__init__(parent)
         self.help_topics = help_topics
         self.setWindowTitle("HellaFusion - Help")
-        self.setFixedSize(PluginConstants.DIALOG_MIN_WIDTH, PluginConstants.DIALOG_MIN_HEIGHT)
+        self.setFixedSize(PluginConstants.HELP_DIALOG_MIN_WIDTH, PluginConstants.HELP_DIALOG_MIN_HEIGHT)
         self.setStyleSheet(PluginConstants.DIALOG_BACKGROUND_STYLE)
 
         layout = QVBoxLayout(self)
@@ -36,7 +36,7 @@ class HelpDialog(QDialog):
 
         # Topic list on the left
         self.topic_list_widget = QListWidget()
-        self.topic_list_widget.setMaximumWidth(220)
+        self.topic_list_widget.setMaximumWidth(200)
         self.topic_list_widget.setStyleSheet(PluginConstants.HELP_PAGE_STYLE)
 
         # Content display on the right
@@ -46,7 +46,7 @@ class HelpDialog(QDialog):
 
         splitter.addWidget(self.topic_list_widget)
         splitter.addWidget(self.content_display_area)
-        splitter.setSizes([135, 465])
+        splitter.setSizes([200, 600])
 
         layout.addWidget(splitter)
 
@@ -71,7 +71,7 @@ class HelpDialog(QDialog):
     def _populate_topics(self):
         """Populate the topic list."""
         # Order topics in a logical sequence
-        topic_order = ["overview", "transitions", "profiles", "slicing", "troubleshooting"]
+        topic_order = ["overview", "gettingstarted", "transitions", "profiles", "slicing", "troubleshooting", "settingshelp"]
         
         for topic_key in topic_order:
             if topic_key in self.help_topics:
