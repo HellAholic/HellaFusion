@@ -1318,7 +1318,7 @@ class HellaFusionLogic:
         
         # Skip analysis if firmware retraction is enabled
         if self._firmware_retraction:
-            decision['reason'] = 'Firmware retraction enabled - handled by firmware'
+            decision['reason'] = 'Firmware retraction enabled -> handled by firmware'
             return decision
         
         # Get filament states - simplified approach
@@ -1334,9 +1334,9 @@ class HellaFusionLogic:
         # Case A: Same retraction state - no action needed
         if prev_retracted == next_retracted:
             if prev_retracted:
-                decision['reason'] = 'Both sections retracted - no change needed'
+                decision['reason'] = 'Both sections retracted -> no retract/prime required'
             else:
-                decision['reason'] = 'Both sections not retracted - no change needed'
+                decision['reason'] = 'Both sections not retracted -> no retract/prime required'
             return decision
         
         # Case B: Previous retracted, next not retracted - PRIME needed
@@ -1348,7 +1348,7 @@ class HellaFusionLogic:
             base_amount = prev_settings.get('retraction_amount', self._retraction_amount)
             decision['prime_amount'] = base_amount
             decision['prime_speed'] = prev_settings.get('prime_speed', self._retraction_prime_speed) * 60  # Convert to mm/min
-            decision['reason'] = 'Previous section retracted, next section not retracted - prime after travel'
+            decision['reason'] = 'Previous section retracted, next section not retracted -> prime after travel'
             
             # Apply intelligent adjustments for different conditions
             multiplier = 1.0
@@ -1389,7 +1389,7 @@ class HellaFusionLogic:
             next_settings = next_section.get('profile_retraction_settings', {})
             decision['retract_amount'] = next_settings.get('retraction_amount', self._retraction_amount)
             decision['retract_speed'] = next_settings.get('retraction_speed', self._retraction_retract_speed) * 60  # Convert to mm/min
-            decision['reason'] = 'Previous section not retracted, next section retracted - retract before travel'
+            decision['reason'] = 'Previous section not retracted, next section retracted -> retract before travel'
             
             # For retractions, we typically don't adjust the amount much
             # But we might adjust based on travel distance or Z changes
@@ -1562,20 +1562,20 @@ class HellaFusionLogic:
             Formatted comment string with aligned columns
             
         Example output:
-            ;Previous section ended at:      X163.996    Y111.336     Z20.000     E428.64499
-            ;Next section starts at:         X158.874    Y123.106     Z20.100    E2058.33703
+            ;Previous section ended at:      X=   163.996  Y=   111.336  Z=    20.000  E=     428.64499
+            ;Next section starts at:         X=   158.874  Y=   123.106  Z=    20.100  E=    2058.33703
         """
         # Format the label with consistent width (35 characters for alignment)
         label_str = f";{label}:"
         formatted_line = f"{label_str:<35}"
         
-        # Format coordinates with right-alignment
-        # X, Y, Z: 12 characters each (right-aligned)
-        # E: 15 characters (right-aligned, needs more space for large values)
-        formatted_line += f"X{x:>10.3f} "
-        formatted_line += f"Y{y:>10.3f} "
-        formatted_line += f"Z{z:>11.3f} "
-        formatted_line += f"E{e:>13.5f}"
+        # Format coordinates with visual separators and right-alignment
+        # X, Y, Z: 13 characters each (right-aligned with = sign)
+        # E: 16 characters (right-aligned with = sign, needs more space for large values)
+        formatted_line += f"X={x:>10.3f}  "
+        formatted_line += f"Y={y:>10.3f}  "
+        formatted_line += f"Z={z:>10.3f}  "
+        formatted_line += f"E={e:>13.5f}"
         
         return formatted_line + "\n"
 
