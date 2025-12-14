@@ -132,7 +132,7 @@ class ProfileValidatorService:
             setting_key="support_enable",
             severity=ValidationSeverity.WARNING,
             message="Support is enabled. This may cause issues with HellaFusion transitions.",
-            check_function=lambda value: value is True
+            check_function=lambda value: value is True or (isinstance(value, str) and value.lower() == "true")
         ))
         
         # Rule 2: Tree support structure (Error)
