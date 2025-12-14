@@ -535,14 +535,20 @@ class HellaFusionDialog(QDialog):
     
     def _addSectionRow(self, section_number):
         """Add a section row to the UI."""
+        # Main section widget
         section_widget = QWidget()
-        section_layout = QHBoxLayout()
-        section_layout.setContentsMargins(0, 5, 0, 5)
+        section_main_layout = QVBoxLayout()
+        section_main_layout.setContentsMargins(0, 5, 0, 5)
+        section_main_layout.setSpacing(4)
+        
+        # Top row: section controls
+        section_control_layout = QHBoxLayout()
+        section_control_layout.setSpacing(8)
         
         # Section label
         section_label = QLabel(f"Section {section_number}:")
         section_label.setStyleSheet(PluginConstants.LABEL_STYLE_SECTION)
-        section_layout.addWidget(section_label)
+        section_control_layout.addWidget(section_label)
         
         # Profile selector
         profile_combo = QComboBox()
@@ -550,7 +556,7 @@ class HellaFusionDialog(QDialog):
         profile_combo.setStyleSheet(PluginConstants.COMBOBOX_STYLE)
         profile_combo.currentIndexChanged.connect(self._onProfileSelectionChanged)
         self._populateProfileCombo(profile_combo)
-        section_layout.addWidget(profile_combo)
+        section_control_layout.addWidget(profile_combo)
         
         # Expert settings: Nozzle height for this section
         show_expert = self._expert_settings_checkbox.isChecked()
@@ -558,7 +564,7 @@ class HellaFusionDialog(QDialog):
         nozzle_height_label = QLabel(f"Nozzle Height:")
         nozzle_height_label.setStyleSheet(PluginConstants.LABEL_STYLE)
         nozzle_height_label.hide()
-        section_layout.addWidget(nozzle_height_label)
+        section_control_layout.addWidget(nozzle_height_label)
         
         nozzle_height_spin = QDoubleSpinBox()
         nozzle_height_spin.setDecimals(2)
@@ -568,9 +574,26 @@ class HellaFusionDialog(QDialog):
         nozzle_height_spin.setValue(0.0)
         nozzle_height_spin.setStyleSheet(PluginConstants.SPIN_BOX_STYLE)
         nozzle_height_spin.hide()
-        section_layout.addWidget(nozzle_height_spin)
+        section_control_layout.addWidget(nozzle_height_spin)
         
-        section_widget.setLayout(section_layout)
+        section_main_layout.addLayout(section_control_layout)
+        
+        # Profile validation message label (below profile dropdown, above transition)
+        validation_message_label = QLabel("")
+        validation_message_label.setWordWrap(True)
+        validation_message_label.setVisible(False)
+        validation_message_label.setContentsMargins(20, 4, 20, 4)
+        section_main_layout.addWidget(validation_message_label)
+        
+        # Override checkbox (for errors only, below validation message)
+        override_checkbox = QCheckBox("I understand the risks, override")
+        override_checkbox.setStyleSheet(PluginConstants.CHECKBOX_STYLE)
+        override_checkbox.setVisible(False)
+        override_checkbox.setContentsMargins(20, 0, 20, 4)
+        override_checkbox.stateChanged.connect(lambda state: self._onOverrideChanged(section_number, state))
+        section_main_layout.addWidget(override_checkbox)
+        
+        section_widget.setLayout(section_main_layout)
         self._transitions_container.addWidget(section_widget)
         
         # Set suffix and show widgets AFTER being added to parent container
@@ -587,6 +610,12 @@ class HellaFusionDialog(QDialog):
             'height_spin': None,  # Only transitions have heights
             'nozzle_height_label': nozzle_height_label,
             'nozzle_height_spin': nozzle_height_spin,
+            'validation_message_label': validation_message_label,
+            'override_checkbox': override_checkbox,
+            'validation_message_label': validation_message_label,
+            'override_checkbox': override_checkbox,
+            'validation_issues': [],  # Store validation issues
+            'error_overridden': False,  # Track override state
             'is_transition': False
         })
     
@@ -663,6 +692,15 @@ class HellaFusionDialog(QDialog):
         
         # Add next section
         self._addSectionRow(next_section)
+        
+        # Validate the newly added section if it has a profile selected
+        # This ensures validation runs even if the profile was auto-selected
+        if self._transition_rows:
+            # Find the newly added section (last non-transition row)
+            for row in reversed(self._transition_rows):
+                if not row['is_transition']:
+                    self._validateSection(row)
+                    break
         
         # Enable remove button
         self._remove_transition_btn.setEnabled(True)
@@ -1002,7 +1040,7 @@ class HellaFusionDialog(QDialog):
             Logger.log("w", f"Error updating model info: {e}")
     
     def _updateStartButtonState(self, has_models: bool = None):
-        """Update the Start Fusing button enabled state based on build plate status.
+        """Update the Start Fusing button enabled state based on build plate status and validation errors.
         
         Args:
             has_models: Optional bool indicating if models are present. If None, will check.
@@ -1018,15 +1056,52 @@ class HellaFusionDialog(QDialog):
                 ]
                 has_models = len(sliceable_nodes) > 0
             
-            # Enable button only if models are present and not currently processing
-            should_enable = has_models and not self._is_processing
+            # Check for unresolved error-level validation issues
+            has_unresolved_errors = False
+            error_sections = []
+            
+            for row in self._transition_rows:
+                if not row['is_transition']:  # Only check sections
+                    # Check if this section has error-level issues that aren't overridden
+                    if row.get('validation_issues'):
+                        has_errors = any(issue.is_error() for issue in row['validation_issues'])
+                        is_overridden = row.get('error_overridden', False)
+                        
+                        if has_errors and not is_overridden:
+                            has_unresolved_errors = True
+                            error_sections.append(row['section_number'])
+            
+            # Enable button only if models are present, not processing, and no unresolved errors
+            should_enable = has_models and not self._is_processing and not has_unresolved_errors
             self._start_btn.setEnabled(should_enable)
+            
+            # Update status label based on validation state
+            if has_unresolved_errors:
+                error_count = len(error_sections)
+                section_text = "section" if error_count == 1 else "sections"
+                self._status_label.setText(f"⚠️ Validation errors in {error_count} {section_text} - check Transitions tab")
+                self._status_label.setStyleSheet(PluginConstants.STATUS_LABEL_ERROR_STYLE)
+            elif not has_models:
+                self._status_label.setText("No model on build plate")
+                self._status_label.setStyleSheet(PluginConstants.STATUS_LABEL_NO_MODEL_STYLE)
+            elif self._is_processing:
+                # Status label is updated by processing logic, don't override
+                pass
+            else:
+                self._status_label.setText("Ready")
+                self._status_label.setStyleSheet(PluginConstants.STATUS_LABEL_READY_STYLE)
             
             # Update tooltip to explain why button is disabled
             if not has_models:
                 self._start_btn.setToolTip("Please add a model to the build plate before starting")
             elif self._is_processing:
                 self._start_btn.setToolTip("Processing in progress...")
+            elif has_unresolved_errors:
+                error_list = ", ".join([f"Section {num}" for num in error_sections])
+                self._start_btn.setToolTip(
+                    f"Cannot start: Profile validation errors in {error_list}.\n"
+                    f"Please change the profile(s) or click Override to proceed."
+                )
             else:
                 self._start_btn.setToolTip("Start the gcode fusion process")
                 
@@ -1383,6 +1458,22 @@ class HellaFusionDialog(QDialog):
                             # Restore custom pause gcode
                             row['pause_gcode'] = pause_data.get('pause_gcode', PluginConstants.DEFAULT_PAUSE_GCODE)
                             break
+            
+            # Validation override states - restore per section
+            if 'validation_overrides' in settings:
+                override_list = settings['validation_overrides']
+                for override_data in override_list:
+                    section_num = override_data.get('section_number')
+                    # Find corresponding section row
+                    for row in self._transition_rows:
+                        if not row['is_transition'] and row.get('section_number') == section_num:
+                            row['error_overridden'] = override_data.get('error_overridden', False)
+                            # Update checkbox if override was previously set
+                            if row.get('override_checkbox'):
+                                row['override_checkbox'].blockSignals(True)
+                                row['override_checkbox'].setChecked(row['error_overridden'])
+                                row['override_checkbox'].blockSignals(False)
+                            break
                 
         finally:
             # Re-enable signals
@@ -1397,6 +1488,10 @@ class HellaFusionDialog(QDialog):
         
         # Update model info on load
         self._updateModelInfo()
+        
+        # Validate all sections after loading settings
+        # This ensures validation runs on startup with loaded profiles
+        self._validateAllSections()
         
         # TODO: Load transitions from settings if needed
     
@@ -1416,6 +1511,15 @@ class HellaFusionDialog(QDialog):
                     'pause_gcode': row.get('pause_gcode', PluginConstants.DEFAULT_PAUSE_GCODE)
                 })
         
+        # Collect validation override states from sections
+        validation_overrides = []
+        for row in self._transition_rows:
+            if not row['is_transition']:  # Only save section override states
+                validation_overrides.append({
+                    'section_number': row['section_number'],
+                    'error_overridden': row.get('error_overridden', False)
+                })
+        
         settings = {
             'dest_folder': self._dest_folder_edit.text(),
             'slice_timeout': self._slice_timeout_spin.value(),
@@ -1429,7 +1533,9 @@ class HellaFusionDialog(QDialog):
             'hide_calculate_button': self._hide_calculate_button_check.isChecked(),
             # Pause settings
             'pause_settings': pause_settings,
-            'default_pause_gcode': self._default_pause_gcode_edit.toPlainText()
+            'default_pause_gcode': self._default_pause_gcode_edit.toPlainText(),
+            # Validation override states
+            'validation_overrides': validation_overrides
         }
         
         self._controller.saveSettings(settings)
@@ -1576,8 +1682,140 @@ class HellaFusionDialog(QDialog):
     
     def _onProfileSelectionChanged(self):
         """Handle changes to profile selections.""" 
+        # Validate the profile that was just selected
+        self._validateAllSections()
+        
         self._invalidateCalculations()
         self._saveSettings()
+    
+    def _validateAllSections(self):
+        """Validate all section profiles and update UI with any issues."""
+        for row in self._transition_rows:
+            if not row['is_transition']:  # Only validate sections, not transitions
+                self._validateSection(row)
+        
+        # Update the Start button state based on validation results
+        self._updateStartButtonState()
+    
+    def _validateSection(self, section_row):
+        """
+        Validate a single section's profile and update its UI.
+        
+        Args:
+            section_row: The section row dictionary to validate
+        """
+        # Get the selected profile data
+        profile_combo = section_row['profile_combo']
+        profile_data = profile_combo.currentData()
+        
+        # Track the current profile to detect changes
+        current_profile_id = profile_data.get('container_id') if profile_data and isinstance(profile_data, dict) else None
+        previous_profile_id = section_row.get('last_validated_profile_id')
+        
+        # If profile changed, reset override state
+        if current_profile_id != previous_profile_id:
+            section_row['error_overridden'] = False
+            section_row['last_validated_profile_id'] = current_profile_id
+            # Reset checkbox state
+            if 'override_checkbox' in section_row:
+                section_row['override_checkbox'].blockSignals(True)
+                section_row['override_checkbox'].setChecked(False)
+                section_row['override_checkbox'].blockSignals(False)
+        
+        # Clear previous validation state - ALWAYS hide validation UI initially
+        section_row['validation_issues'] = []
+        section_row['validation_message_label'].setVisible(False)
+        section_row['validation_message_label'].setText("")
+        section_row['validation_message_label'].setStyleSheet("")
+        section_row['override_checkbox'].setVisible(False)
+        
+        if not profile_data or not isinstance(profile_data, dict):
+            return
+        
+        # Validate the profile using the controller
+        issues = self._controller.validateProfile(profile_data)
+        
+        if not issues or len(issues) == 0:
+            # No issues found - keep everything hidden
+            return
+        
+        # Store issues in the section row
+        section_row['validation_issues'] = issues
+        
+        # Separate errors and warnings
+        errors = [issue for issue in issues if issue.is_error()]
+        warnings = [issue for issue in issues if issue.is_warning()]
+        
+        # Count totals
+        error_count = len(errors)
+        warning_count = len(warnings)
+        
+        # Build summary message
+        summary_parts = []
+        if error_count > 0:
+            summary_parts.append(f"{error_count} error{'s' if error_count != 1 else ''}")
+        if warning_count > 0:
+            summary_parts.append(f"{warning_count} warning{'s' if warning_count != 1 else ''}")
+        
+        summary = f"Profile has {' and '.join(summary_parts)}:"
+        
+        # Build detailed message
+        detail_lines = []
+        if errors:
+            for error in errors:
+                detail_lines.append(f"  ❌ ERROR: {error.message}")
+        if warnings:
+            for warning in warnings:
+                detail_lines.append(f"  ⚠️  WARNING: {warning.message}")
+        
+        combined_message = summary + "\n" + "\n".join(detail_lines)
+        
+        # Update validation label
+        section_row['validation_message_label'].setText(combined_message)
+        section_row['validation_message_label'].setVisible(True)
+        
+        # Style based on severity (errors take precedence)
+        if errors:
+            # Error styling (red)
+            section_row['validation_message_label'].setStyleSheet(PluginConstants.VALIDATION_ERROR_STYLE)
+            # Show override checkbox ONLY for errors
+            section_row['override_checkbox'].setVisible(True)
+            # Set checkbox state based on stored override state
+            section_row['override_checkbox'].blockSignals(True)
+            section_row['override_checkbox'].setChecked(section_row.get('error_overridden', False))
+            section_row['override_checkbox'].blockSignals(False)
+        elif warnings:
+            # Warning styling (orange) - NO override checkbox
+            section_row['validation_message_label'].setStyleSheet(PluginConstants.VALIDATION_WARNING_STYLE)
+            section_row['override_checkbox'].setVisible(False)
+    
+    def _onOverrideChanged(self, section_number, state):
+        """
+        Handle override checkbox state change for a section.
+        
+        Args:
+            section_number: The section number
+            state: Qt.CheckState value
+        """
+        # Find the section row
+        for row in self._transition_rows:
+            if not row['is_transition'] and row['section_number'] == section_number:
+                # Update override state based on checkbox
+                is_checked = (state == Qt.CheckState.Checked.value)
+                row['error_overridden'] = is_checked
+                
+                # Log the override state change
+                if is_checked:
+                    self._logMessage(f"Section {section_number}: Error override accepted by user")
+                else:
+                    self._logMessage(f"Section {section_number}: Error override removed")
+                
+                # Update start button state
+                self._updateStartButtonState()
+                
+                # Save settings to persist override state
+                self._saveSettings()
+                break
     
     def _onExpertSettingsToggled(self, state):
         """Handle expert settings checkbox toggle - show/hide nozzle height fields and pause controls."""

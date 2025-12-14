@@ -103,6 +103,13 @@ M82                                   ; Absolute extrusion mode
     BUTTON_CALCULATE_BG = "#ff9800"
     BUTTON_CALCULATE_HOVER_BG = "#c77800"
     
+    # Validation colors
+    WARNING_COLOR = "#FFA500"
+    WARNING_BG_COLOR = "#4D3800"
+    ERROR_COLOR = "#FF4444"
+    ERROR_BG_COLOR = "#4D1111"
+    SUCCESS_COLOR = "#4CAF50"
+    
     DIALOG_BACKGROUND_STYLE = f"background-color: {DARK_BACKGROUND_COLOR};"
     
     GROUPBOX_STYLE = f'''
@@ -124,6 +131,9 @@ M82                                   ; Absolute extrusion mode
     
     LABEL_STYLE = f"color: {TEXT_COLOR_LIGHT_GRAY}; font-size: 13px"
     STATUS_LABEL_STYLE = f"color: {TEXT_COLOR_LIGHT_GRAY}; font-size: 13px"
+    STATUS_LABEL_READY_STYLE = f"color: {SUCCESS_COLOR}; font-weight: bold;"
+    STATUS_LABEL_ERROR_STYLE = f"color: {ERROR_COLOR}; font-weight: bold;"
+    STATUS_LABEL_NO_MODEL_STYLE = f"color: #888888;"
     
     LINE_EDIT_STYLE = f"background-color: {TEXT_INPUT_BG_COLOR_DARK_GRAY}; color: {TEXT_COLOR_LIGHT_GRAY}; border: 1px solid {TEXT_INPUT_BORDER_COLOR_GRAY}; border-radius: 3px; padding: 2px;"
     
@@ -941,3 +951,49 @@ M82                                   ; Absolute extrusion mode
             """
         }
     }
+    
+    # Validation message styles
+    VALIDATION_WARNING_STYLE = f'''
+        QLabel {{
+            color: {WARNING_COLOR};
+            background-color: {WARNING_BG_COLOR};
+            border: 1px solid {WARNING_COLOR};
+            border-radius: 3px;
+            padding: 4px 8px;
+            font-size: 11px;
+            font-weight: bold;
+        }}
+    '''
+    
+    VALIDATION_ERROR_STYLE = f'''
+        QLabel {{
+            color: {ERROR_COLOR};
+            background-color: {ERROR_BG_COLOR};
+            border: 1px solid {ERROR_COLOR};
+            border-radius: 3px;
+            padding: 4px 8px;
+            font-size: 11px;
+            font-weight: bold;
+        }}
+    '''
+    
+    OVERRIDE_BUTTON_STYLE = f'''
+        QPushButton {{
+            padding: 3px 8px;
+            background-color: {WARNING_COLOR};
+            border: 1px solid {WARNING_COLOR};
+            color: #000000;
+            border-radius: 3px;
+            font-size: 10px;
+            font-weight: bold;
+            min-width: 60px;
+        }}
+        QPushButton:hover {{
+            background-color: #FFB733;
+        }}
+        QPushButton:disabled {{
+            background-color: {TEXT_INPUT_BG_COLOR_DARK_GRAY};
+            border: 1px solid {TEXT_INPUT_BORDER_COLOR_GRAY};
+            color: {TEXT_INPUT_BORDER_COLOR_GRAY};
+        }}
+    '''

@@ -27,6 +27,7 @@ from UM.Scene.Iterator.DepthFirstIterator import DepthFirstIterator
 from .ProfileSwitchingService import ProfileSwitchingService
 from .HellaFusionExceptions import ProfileSwitchError
 from .TransitionCalculator import TransitionCalculator
+from .ProfileValidatorService import ProfileValidatorService
 
 
 class HellaFusionController(QObject):
@@ -43,6 +44,7 @@ class HellaFusionController(QObject):
         super().__init__()
         self._quality_profiles = []
         self._profile_service = ProfileSwitchingService()
+        self._validator_service = ProfileValidatorService()
         self._is_loading_profiles = False  # Guard flag to prevent simultaneous loads
         self._reload_timer = None  # Timer for debouncing reload requests
 
@@ -804,3 +806,114 @@ class HellaFusionController(QObject):
             # Choose the option with minimal deviation from original
             best_option = min(valid_options, key=lambda x: x[2])
             return best_option[0], best_option[1], best_option[2]
+    
+    def readProfileSettings(self, profile_data: dict) -> dict:
+        """
+        Read specific setting values from a profile container.
+        
+        Args:
+            profile_data: Profile data dict from combo box containing 'container_id' and metadata
+            
+        Returns:
+            Dictionary of setting_key -> setting_value pairs
+        """
+        settings = {}
+        
+        try:
+            # Get container from registry using the container_id
+            container_id = profile_data.get('container_id')
+            intent_container_id = profile_data.get('intent_container_id')
+            
+            if not container_id:
+                Logger.log("w", "No container_id found in profile data")
+                return settings
+            
+            # Get the global container stack and container registry
+            application = CuraApplication.getInstance()
+            global_stack = application.getGlobalContainerStack()
+            container_registry = application.getContainerRegistry()
+            
+            if not global_stack:
+                Logger.log("w", "No global container stack available")
+                return settings
+            
+            # Find the quality container
+            quality_containers = container_registry.findInstanceContainers(id=container_id)
+            if not quality_containers:
+                Logger.log("w", f"Could not find container with id: {container_id}")
+                return settings
+            
+            container = quality_containers[0]
+            
+            # Find the intent container if specified
+            intent_container = None
+            if intent_container_id:
+                intent_containers = container_registry.findInstanceContainers(id=intent_container_id)
+                if intent_containers:
+                    intent_container = intent_containers[0]
+            
+            # Get the list of settings to read from the validator service
+            # This ensures we only read what we actually validate
+            setting_keys = self._validator_service.get_required_settings()
+            
+            # Read each setting value from the profile
+            for setting_key in setting_keys:
+                try:
+                    # Try to get value from intent container first (if it exists)
+                    value = None
+                    if intent_container and intent_container.hasProperty(setting_key, "value"):
+                        value = intent_container.getProperty(setting_key, "value")
+                    
+                    # Fall back to quality container
+                    if value is None and container.hasProperty(setting_key, "value"):
+                        value = container.getProperty(setting_key, "value")
+                    
+                    # Fall back to getting the property from global stack (with profile in stack)
+                    if value is None:
+                        value = global_stack.getProperty(setting_key, "value")
+                    
+                    if value is not None:
+                        settings[setting_key] = value
+                        
+                except Exception as e:
+                    Logger.log("w", f"Could not read setting {setting_key}: {e}")
+            
+            return settings
+            
+        except Exception as e:
+            Logger.log("e", f"Error reading profile settings: {e}")
+            return settings
+    
+    def validateProfile(self, profile_data: dict):
+        """
+        Validate a profile against HellaFusion compatibility rules.
+        
+        Args:
+            profile_data: Profile data dict containing 'container' and other metadata
+            
+        Returns:
+            List of ValidationIssue objects (empty if no issues)
+        """
+        try:
+            # Read the settings from the profile
+            settings = self.readProfileSettings(profile_data)
+            
+            if not settings:
+                Logger.log("w", "No settings could be read from profile")
+                return []
+
+            
+            # Validate using the validator service
+            issues = self._validator_service.validate_profile_settings(settings)
+            
+            # Log validation results
+            if issues:
+                Logger.log("i", f"Profile validation found {len(issues)} issue(s):")
+                for issue in issues:
+                    Logger.log("i", f"  - {issue.severity.value.upper()}: {issue.message}")
+
+            return issues
+            
+        except Exception as e:
+            Logger.log("e", f"Error validating profile: {e}")
+            return []
