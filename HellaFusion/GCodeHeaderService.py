@@ -31,23 +31,19 @@ class GCodeHeaderService:
                         pass
             
             if last_time is None:
-                Logger.log("w", "Could not find TIME_ELAPSED values to update header time")
                 return combined
             
             # Update header - look for ;TIME: or ;PRINT.TIME:
             # Be careful not to match ;TIME_ELAPSED:
-            time_updated = False
             for i, line in enumerate(combined):
                 line_stripped = line.strip()
                 
                 # Match ;TIME: but NOT ;TIME_ELAPSED:
                 if line_stripped.startswith(';TIME:') and not line_stripped.startswith(';TIME_ELAPSED:'):
                     combined[i] = f";TIME:{int(last_time)}\n"
-                    time_updated = True
                     break
                 elif line_stripped.startswith(';PRINT.TIME:'):
                     combined[i] = f";PRINT.TIME:{int(last_time)}\n"
-                    time_updated = True
                     break
                 
                 # Stop searching after we leave the header section
@@ -57,9 +53,6 @@ class GCodeHeaderService:
                 elif line_stripped.startswith('G') or line_stripped.startswith('M'):
                     # Reached actual G-code commands, stop searching
                     break
-            
-            if not time_updated:
-                Logger.log("w", "Could not find ;TIME: or ;PRINT.TIME: in header to update")
             
             return combined
             

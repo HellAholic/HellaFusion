@@ -59,7 +59,6 @@ class HellaFusion(Extension):
             settings_dict: Dictionary containing all user settings from the UI
         """
         if self._job and self._job.isRunning():
-            Logger.log("w", "Cannot start gcode splicing - job already running")
             return
 
         try:
@@ -90,7 +89,6 @@ class HellaFusion(Extension):
     def stopSplicing(self):
         """Stop the gcode splicing process gracefully."""
         if not self._job or not self._job.isRunning():
-            Logger.log("w", "No gcode splicing process is running")
             return
         
         try:

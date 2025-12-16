@@ -34,6 +34,7 @@ from .HellaFusionExceptions import (HellaFusionException, ProfileSwitchError,
 from .PluginConstants import PluginConstants
 from .HellaFusionController import HellaFusionController
 from .HelpDialog import HelpDialog
+from .PauseSettingsDialog import PauseSettingsDialog
 
 
 class HellaFusionDialog(QDialog):
@@ -858,8 +859,6 @@ class HellaFusionDialog(QDialog):
             except Exception as calc_error:
                 Logger.log("e", f"Exception during calculation: {str(calc_error)}")
                 self._logMessage(f"Calculation error: {str(calc_error)}", is_error=True)
-                import traceback
-                self._logMessage(traceback.format_exc(), is_error=True)
                 return
             
             if not self._calculated_transitions:
@@ -1922,7 +1921,7 @@ class HellaFusionDialog(QDialog):
     
     def _onPauseSettingsClicked(self, transition_number):
         """Handle pause settings button click."""
-        from .PauseSettingsDialog import PauseSettingsDialog
+
         
         # Find the transition row
         for row in self._transition_rows:
@@ -1963,12 +1962,10 @@ class HellaFusionDialog(QDialog):
     
     def _onBrowseTempPath(self):
         """Handle temp path browse button click."""
-        from PyQt6.QtWidgets import QFileDialog
         
         # Get current path or use home directory
         current_path = self._temp_file_path_edit.text()
         if not current_path:
-            import os
             current_path = os.path.expanduser("~")
         
         # Open directory selection dialog

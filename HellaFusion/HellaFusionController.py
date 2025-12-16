@@ -28,7 +28,7 @@ from .ProfileSwitchingService import ProfileSwitchingService
 from .HellaFusionExceptions import ProfileSwitchError
 from .TransitionCalculator import TransitionCalculator
 from .ProfileValidatorService import ProfileValidatorService
-
+from .TransitionData import TransitionData
 
 class HellaFusionController(QObject):
     """Controller class that handles all business logic for the HellaFusion plugin."""
@@ -81,7 +81,6 @@ class HellaFusionController(QObject):
     
     def validateStartProcessing(self, dest_folder, transitions):
         """Validate inputs before starting processing."""
-        from .HellaFusionExceptions import ValidationError
         
         errors = []
         
@@ -215,7 +214,6 @@ class HellaFusionController(QObject):
                 machine_manager.globalContainerChanged.connect(self._onMachineChanged)
             
             # Connect to container tree changes (when profiles are added/modified)
-            from cura.Machines.ContainerTree import ContainerTree
             container_tree = ContainerTree.getInstance()
             if hasattr(container_tree, 'containerTreeChanged'):
                 container_tree.containerTreeChanged.connect(self._onMachineChanged)
@@ -309,9 +307,7 @@ class HellaFusionController(QObject):
             self._logMessage(f"Detected machine: {machine_name} (ID: {machine_definition_id})")
             
             actual_machine_id = machine_definition_id
-            if machine_definition_id == "fdmprinter":
-                Logger.log("w", "Machine detected as fdmprinter - looking for specific definition...")
-                
+            if machine_definition_id == "fdmprinter":                
                 container_registry = application.getContainerRegistry()
                 all_machine_definitions = container_registry.findDefinitionContainers(type="machine")
                 
@@ -361,7 +357,6 @@ class HellaFusionController(QObject):
                                     try:
                                         intent_container = intent_node.container
                                         if not intent_container:
-                                            Logger.log("w", f"Intent {intent_id} has no container")
                                             continue
                                             
                                         # Get intent metadata - handle empty_intent as default
@@ -505,7 +500,6 @@ class HellaFusionController(QObject):
             # Ensure we have default profiles
             has_default_intent = any(profile['intent'] == 'default' for profile in self._quality_profiles)
             if not has_default_intent and self._quality_profiles:
-                Logger.log("w", "No default intent profiles found, creating default entries")
                 # Group by quality type to create default profiles
                 quality_types = {}
                 for profile in self._quality_profiles:
@@ -538,8 +532,6 @@ class HellaFusionController(QObject):
                     
         except Exception as main_error:
             Logger.log("e", f"Error loading quality profiles: {main_error}")
-            import traceback
-            traceback.print_exc()
             self._logMessage("Failed to load quality profiles.", is_error=True)
         
         finally:
@@ -620,9 +612,6 @@ class HellaFusionController(QObject):
                 extruders = global_stack.extruderList
                 if not extruders:
                     return None
-                
-                # Import TransitionData for conversion helpers
-                from .TransitionData import TransitionData
                 
                 # Read raw values from Cura (these have shrinkage compensation already applied)
                 layer_height_raw = float(global_stack.getProperty("layer_height", "value") or 0.2)
@@ -705,8 +694,6 @@ class HellaFusionController(QObject):
             
         except Exception as e:
             Logger.log("e", f"Error calculating transition adjustments: {e}")
-            import traceback
-            traceback.print_exc()
             self._logMessage(f"Failed to calculate adjustments: {e}", is_error=True)
             return []
 
@@ -736,9 +723,6 @@ class HellaFusionController(QObject):
             if not global_stack:
                 Logger.log("e", "No global stack available")
                 return False
-            
-            # Import TransitionData for conversion helpers
-            from .TransitionData import TransitionData
             
             # Get the user changes container
             user_changes = global_stack.userChanges
@@ -807,83 +791,6 @@ class HellaFusionController(QObject):
             best_option = min(valid_options, key=lambda x: x[2])
             return best_option[0], best_option[1], best_option[2]
     
-    def readProfileSettings(self, profile_data: dict) -> dict:
-        """
-        Read specific setting values from a profile container.
-        
-        Args:
-            profile_data: Profile data dict from combo box containing 'container_id' and metadata
-            
-        Returns:
-            Dictionary of setting_key -> setting_value pairs
-        """
-        settings = {}
-        
-        try:
-            # Get container from registry using the container_id
-            container_id = profile_data.get('container_id')
-            intent_container_id = profile_data.get('intent_container_id')
-            
-            if not container_id:
-                Logger.log("w", "No container_id found in profile data")
-                return settings
-            
-            # Get the global container stack and container registry
-            application = CuraApplication.getInstance()
-            global_stack = application.getGlobalContainerStack()
-            container_registry = application.getContainerRegistry()
-            
-            if not global_stack:
-                Logger.log("w", "No global container stack available")
-                return settings
-            
-            # Find the quality container
-            quality_containers = container_registry.findInstanceContainers(id=container_id)
-            if not quality_containers:
-                Logger.log("w", f"Could not find container with id: {container_id}")
-                return settings
-            
-            container = quality_containers[0]
-            
-            # Find the intent container if specified
-            intent_container = None
-            if intent_container_id:
-                intent_containers = container_registry.findInstanceContainers(id=intent_container_id)
-                if intent_containers:
-                    intent_container = intent_containers[0]
-            
-            # Get the list of settings to read from the validator service
-            # This ensures we only read what we actually validate
-            setting_keys = self._validator_service.get_required_settings()
-            
-            # Read each setting value from the profile
-            for setting_key in setting_keys:
-                try:
-                    # Try to get value from intent container first (if it exists)
-                    value = None
-                    if intent_container and intent_container.hasProperty(setting_key, "value"):
-                        value = intent_container.getProperty(setting_key, "value")
-                    
-                    # Fall back to quality container
-                    if value is None and container.hasProperty(setting_key, "value"):
-                        value = container.getProperty(setting_key, "value")
-                    
-                    # Fall back to getting the property from global stack (with profile in stack)
-                    if value is None:
-                        value = global_stack.getProperty(setting_key, "value")
-                    
-                    if value is not None:
-                        settings[setting_key] = value
-                        
-                except Exception as e:
-                    Logger.log("w", f"Could not read setting {setting_key}: {e}")
-            
-            return settings
-            
-        except Exception as e:
-            Logger.log("e", f"Error reading profile settings: {e}")
-            return settings
-    
     def validateProfile(self, profile_data: dict):
         """
         Validate a profile against HellaFusion compatibility rules.
@@ -895,13 +802,11 @@ class HellaFusionController(QObject):
             List of ValidationIssue objects (empty if no issues)
         """
         try:
-            # Read the settings from the profile
-            settings = self.readProfileSettings(profile_data)
+            # Read the settings from the profile using the validator service
+            settings = self._validator_service.read_profile_settings(profile_data)
             
             if not settings:
-                Logger.log("w", "No settings could be read from profile")
                 return []
-
             
             # Validate using the validator service
             issues = self._validator_service.validate_profile_settings(settings)

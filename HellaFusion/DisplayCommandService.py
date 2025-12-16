@@ -4,7 +4,7 @@ This service handles post-processing of display commands after fusion, updating:
 - Layer numbers (sections are renumbered consecutively)
 - Time estimates (based on adjusted TIME_ELAPSED values)
 """
-
+import re
 from UM.Logger import Logger
 
 
@@ -37,7 +37,6 @@ class DisplayCommandService:
                     total_layers += 1
             
             if total_layers == 0:
-                Logger.log("w", "No layers found for M117/M118 update")
                 return combined
             
             current_layer = 0
@@ -87,7 +86,6 @@ class DisplayCommandService:
         Returns:
             Updated command string
         """
-        import re
         
         # Extract command prefix (M117 or M118 with optional parameters like A1, P0)
         cmd_match = re.match(r'(M11[78](?:\s+[AP]\d+)*)\s+(.+)', command)

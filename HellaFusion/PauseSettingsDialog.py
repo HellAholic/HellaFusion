@@ -8,7 +8,7 @@
 
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QTextEdit, 
                               QPushButton, QLabel, QMessageBox)
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import pyqtSignal
 from .PluginConstants import PluginConstants
 
 

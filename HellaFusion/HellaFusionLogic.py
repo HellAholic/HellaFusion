@@ -1167,10 +1167,7 @@ class HellaFusionLogic:
                 if baseline_time_section_a is not None and baseline_time_section_b is not None:
                     time_delta = baseline_time_section_a - baseline_time_section_b
                     sections[i]['time_delta'] = time_delta
-                    
-                    # Log detailed calculation for debugging
-                    Logger.log("d", f"Section {sections[i]['section_number']} time delta: {time_delta:.3f}s "
-                             f"(prev_end={baseline_time_section_a:.3f}s, curr_ref={baseline_time_section_b:.3f}s)")
+
                 elif baseline_time_section_a is None:
                     sections[i]['time_delta'] = 0.0
                     Logger.log("e", f"Section {sections[i]['section_number']}: Could not find TIME_ELAPSED from previous section - using delta=0. "

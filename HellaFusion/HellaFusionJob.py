@@ -31,6 +31,8 @@ from .HellaFusionExceptions import (ProfileSwitchError, BackendError)
 from .JobStateManager import JobStateManager
 from .JobState import JobState
 from .ProfileSwitchingService import ProfileSwitchingService
+from .TransitionData import TransitionData
+
 
 import time
 import os
@@ -216,9 +218,7 @@ class HellaFusionJob(Job):
                 
                 # Get layer height from current profile
                 layer_height = PluginConstants.DEFAULT_LAYER_HEIGHT  # Default fallback
-                try:
-                    from .TransitionData import TransitionData
-                    
+                try:                    
                     global_stack = self._application.getGlobalContainerStack()
                     if global_stack:
                         # Read raw value from Cura (has shrinkage applied)
@@ -721,9 +721,6 @@ class HellaFusionJob(Job):
             if not global_stack:
                 Logger.log("e", "No global stack available for layer height adjustment")
                 return False
-            
-            # Import TransitionData for conversion helpers
-            from .TransitionData import TransitionData
             
             # Get shrinkage factor
             shrinkage_factor = float(global_stack.getProperty("material_shrinkage_percentage_z", "value") or 100.0)
