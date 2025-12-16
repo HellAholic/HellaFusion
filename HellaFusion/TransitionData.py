@@ -163,7 +163,7 @@ class TransitionData:
         if self.adjusted_initial_layer_height <= 0:
             errors.append(f"Section {self.section_num}: Invalid adjusted_initial_layer_height {self.adjusted_initial_layer_height}")
         
-        if self.adjusted_initial_layer_height > self.layer_height * 1.5:
+        if self.adjusted_initial_layer_height > self.layer_height * 4:
             errors.append(f"Section {self.section_num}: adjusted_initial_layer_height ({self.adjusted_initial_layer_height:.3f}) is unusually large compared to layer_height ({self.layer_height:.3f})")
         
         # Check Z boundaries
