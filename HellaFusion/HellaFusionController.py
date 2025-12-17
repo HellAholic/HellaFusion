@@ -538,7 +538,7 @@ class HellaFusionController(QObject):
             # Always reset the loading flag
             self._is_loading_profiles = False
 
-    def calculateTransitionAdjustments(self, transitions):
+    def calculateTransitionAdjustments(self, transitions, apply_shrinkage_compensation=True):
         """
         Calculate exact transition points using TransitionCalculator.
         
@@ -549,6 +549,7 @@ class HellaFusionController(QObject):
         Args:
             transitions: List of dicts with 'section_number', 'start_height', 'end_height', 
                         'profile_id', 'intent_category', 'intent_container_id'
+            apply_shrinkage_compensation: If False, skip material shrinkage compensation
             
         Returns:
             List of dicts with exact transition info (backward compatible format for Logic)
@@ -571,24 +572,6 @@ class HellaFusionController(QObject):
             original_quality_changes_id = active_machine.qualityChanges.getId() if active_machine else None
             original_intent_category = machine_manager.activeIntentCategory
             
-            # Check for problematic settings
-            support_enable = global_stack.getProperty("support_enable", "value")
-            support_structure = global_stack.getProperty("support_structure", "value") if support_enable else None
-            adaptive_layer_height_enabled = global_stack.getProperty("adaptive_layer_height_enabled", "value")
-            
-            # Display warnings if problematic settings are detected
-            if adaptive_layer_height_enabled:
-                self._logMessage("")
-                self._logMessage("⚠️  WARNING: Adaptive Layer Height is enabled!", is_error=True)
-                self._logMessage("   Adaptive layers may not work correctly with transition adjustments.", is_error=True)
-                self._logMessage("")
-            
-            if support_enable and support_structure in ["tree", "support_tree_bp"]:
-                self._logMessage("")
-                self._logMessage("⚠️  WARNING: Tree Support is enabled!", is_error=True)
-                self._logMessage("   Tree support can cause issues at transitions (non-deterministic).", is_error=True)
-                self._logMessage("")
-            
             # Convert transitions to format expected by TransitionCalculator
             sections_config = []
             for transition in transitions:
@@ -600,6 +583,9 @@ class HellaFusionController(QObject):
                     'intent_category': transition.get('intent_category'),
                     'intent_container_id': transition.get('intent_container_id')
                 })
+            
+            # Log shrinkage compensation status
+            self._logMessage(f"Material shrinkage compensation: {'ENABLED' if apply_shrinkage_compensation else 'DISABLED'}")
             
             # Create profile reader callback that switches profiles and reads parameters
             def profile_reader(profile_id, intent_category, intent_container_id):
@@ -619,8 +605,8 @@ class HellaFusionController(QObject):
                 shrinkage_factor = float(global_stack.getProperty("material_shrinkage_percentage_z", "value") or 100.0)
                 
                 # Convert from Cura format to actual values for plugin calculations
-                layer_height_actual = TransitionData.convert_from_cura(layer_height_raw, shrinkage_factor)
-                initial_layer_height_actual = TransitionData.convert_from_cura(initial_layer_height_raw, shrinkage_factor)
+                layer_height_actual = TransitionData.convert_from_cura(layer_height_raw, shrinkage_factor, apply_shrinkage_compensation)
+                initial_layer_height_actual = TransitionData.convert_from_cura(initial_layer_height_raw, shrinkage_factor, apply_shrinkage_compensation)
                 
                 return {
                     'layer_height': layer_height_actual,
@@ -708,13 +694,14 @@ class HellaFusionController(QObject):
             Logger.logException("e", f"Unexpected error switching quality profile: {str(e)}")
             return False
     
-    def applyLayerHeightAdjustment(self, profile_container, adjusted_initial_height, shrinkage_factor):
+    def applyLayerHeightAdjustment(self, profile_container, adjusted_initial_height, shrinkage_factor, apply_shrinkage_compensation=True):
         """Apply the calculated initial layer height adjustment to a profile and trigger settings update.
         
         Args:
             profile_container: The profile container to modify
             adjusted_initial_height: The ACTUAL calculated initial layer height (not Cura format)
             shrinkage_factor: material_shrinkage_percentage_z value
+            apply_shrinkage_compensation: If False, skip material shrinkage compensation
         """
         try:
             application = CuraApplication.getInstance()
@@ -731,7 +718,8 @@ class HellaFusionController(QObject):
             # The adjusted_initial_height is in actual units, we need to convert to Cura format
             adjusted_initial_height_cura = TransitionData.convert_to_cura(
                 float(adjusted_initial_height), 
-                shrinkage_factor
+                shrinkage_factor,
+                apply_shrinkage_compensation
             )
             
             # Set the adjusted initial layer height in Cura format

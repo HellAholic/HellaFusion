@@ -63,7 +63,7 @@ class TransitionData:
             object.__setattr__(self, 'metadata', {})
     
     @staticmethod
-    def convert_from_cura(value: float, shrinkage_factor: float) -> float:
+    def convert_from_cura(value: float, shrinkage_factor: float, apply_compensation: bool = True) -> float:
         """Convert layer height from Cura format (with shrinkage applied) to actual value.
         
         Cura multiplies layer heights by (shrinkage_factor / 100) before we can read them.
@@ -73,16 +73,17 @@ class TransitionData:
         Args:
             value: Layer height value as read from Cura
             shrinkage_factor: material_shrinkage_percentage_z (e.g., 100.1)
+            apply_compensation: If False, skip shrinkage compensation (return value as-is)
         
         Returns:
             Actual layer height value for plugin calculations
         """
-        if shrinkage_factor == 0:
-            return value  # Avoid division by zero
+        if not apply_compensation or shrinkage_factor == 0:
+            return value  # Skip compensation or avoid division by zero
         return (value * 100.0) / shrinkage_factor
     
     @staticmethod
-    def convert_to_cura(value: float, shrinkage_factor: float) -> float:
+    def convert_to_cura(value: float, shrinkage_factor: float, apply_compensation: bool = True) -> float:
         """Convert layer height from actual value to Cura format (with shrinkage applied).
         
         When setting layer heights back to Cura, we need to apply shrinkage compensation:
@@ -91,10 +92,13 @@ class TransitionData:
         Args:
             value: Actual layer height value from plugin calculations
             shrinkage_factor: material_shrinkage_percentage_z (e.g., 100.1)
+            apply_compensation: If False, skip shrinkage compensation (return value as-is)
         
         Returns:
             Layer height value in Cura format (with shrinkage applied)
         """
+        if not apply_compensation:
+            return value  # Skip compensation
         return value * (shrinkage_factor / 100.0)
     
     @property

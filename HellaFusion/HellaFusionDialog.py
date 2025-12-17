@@ -262,17 +262,35 @@ class HellaFusionDialog(QDialog):
         scroll_area.setWidget(scroll_widget)
         transitions_tab_layout.addWidget(scroll_area)
         
+        # Checkboxes layout
+        checkboxes_layout = QVBoxLayout()
+        checkboxes_layout.setContentsMargins(0, 8, 0, 0)
+        checkboxes_layout.setSpacing(4)
+        
+        # Shrinkage compensation checkbox
+        shrinkage_layout = QHBoxLayout()
+        self._apply_shrinkage_compensation_check = QCheckBox("Apply material shrinkage compensation")
+        self._apply_shrinkage_compensation_check.setChecked(True)  # Default: enabled
+        self._apply_shrinkage_compensation_check.setStyleSheet(PluginConstants.CHECKBOX_STYLE)
+        self._apply_shrinkage_compensation_check.setToolTip(
+            "When enabled, the plugin compensates for material_shrinkage_percentage_z in layer height calculations.\n"
+            "Disable this if your printer doesn't properly adjust layer heights for material shrinkage."
+        )
+        self._apply_shrinkage_compensation_check.stateChanged.connect(self._saveSettings)
+        shrinkage_layout.addWidget(self._apply_shrinkage_compensation_check)
+        shrinkage_layout.addStretch()
+        checkboxes_layout.addLayout(shrinkage_layout)
+        
         # Expert settings checkbox
         expert_settings_layout = QHBoxLayout()
-        expert_settings_layout.setContentsMargins(0, 8, 0, 0)
-        
         self._expert_settings_checkbox = QCheckBox("Show Expert Settings")
         self._expert_settings_checkbox.setStyleSheet(PluginConstants.CHECKBOX_STYLE)
         self._expert_settings_checkbox.stateChanged.connect(self._onExpertSettingsToggled)
         expert_settings_layout.addWidget(self._expert_settings_checkbox)
         expert_settings_layout.addStretch()
+        checkboxes_layout.addLayout(expert_settings_layout)
         
-        transitions_tab_layout.addLayout(expert_settings_layout)
+        transitions_tab_layout.addLayout(checkboxes_layout)
         
         # Add/Remove buttons
         transition_buttons_layout = QHBoxLayout()
@@ -853,9 +871,17 @@ class HellaFusionDialog(QDialog):
             self._logMessage("=" * 60)
             self._logMessage(f"Processing {len(transitions)} section(s)...")
             
+            # Get shrinkage compensation setting
+            apply_shrinkage_compensation = self._apply_shrinkage_compensation_check.isChecked()
+            if not apply_shrinkage_compensation:
+                self._logMessage("⚠️  Material shrinkage compensation DISABLED by user")
+            
             # Calculate adjustments using controller (which switches profiles to read values)
             try:
-                self._calculated_transitions = self._controller.calculateTransitionAdjustments(transitions)
+                self._calculated_transitions = self._controller.calculateTransitionAdjustments(
+                    transitions, 
+                    apply_shrinkage_compensation
+                )
             except Exception as calc_error:
                 Logger.log("e", f"Exception during calculation: {str(calc_error)}")
                 self._logMessage(f"Calculation error: {str(calc_error)}", is_error=True)
@@ -1401,6 +1427,7 @@ class HellaFusionDialog(QDialog):
         self._dest_folder_edit.blockSignals(True)
         self._slice_timeout_spin.blockSignals(True)
         self._expert_settings_checkbox.blockSignals(True)
+        self._apply_shrinkage_compensation_check.blockSignals(True)
         self._remove_temp_files_check.blockSignals(True)
         self._temp_file_path_edit.blockSignals(True)
         self._temp_file_prefix_edit.blockSignals(True)
@@ -1418,6 +1445,12 @@ class HellaFusionDialog(QDialog):
                 self._expert_settings_checkbox.setChecked(settings['expert_settings_enabled'])
                 # Trigger the visibility toggle manually (since signals are blocked)
                 self._onExpertSettingsToggled(Qt.CheckState.Checked.value if settings['expert_settings_enabled'] else Qt.CheckState.Unchecked.value)
+            
+            # Shrinkage compensation setting (default: True if not in settings)
+            if 'apply_shrinkage_compensation' in settings:
+                self._apply_shrinkage_compensation_check.setChecked(settings['apply_shrinkage_compensation'])
+            else:
+                self._apply_shrinkage_compensation_check.setChecked(True)  # Default: enabled
             
             # File management settings
             if 'remove_temp_files' in settings:
@@ -1479,6 +1512,7 @@ class HellaFusionDialog(QDialog):
             self._dest_folder_edit.blockSignals(False)
             self._slice_timeout_spin.blockSignals(False)
             self._expert_settings_checkbox.blockSignals(False)
+            self._apply_shrinkage_compensation_check.blockSignals(False)
             self._remove_temp_files_check.blockSignals(False)
             self._temp_file_path_edit.blockSignals(False)
             self._temp_file_prefix_edit.blockSignals(False)
@@ -1523,6 +1557,7 @@ class HellaFusionDialog(QDialog):
             'dest_folder': self._dest_folder_edit.text(),
             'slice_timeout': self._slice_timeout_spin.value(),
             'expert_settings_enabled': self._expert_settings_checkbox.isChecked(),
+            'apply_shrinkage_compensation': self._apply_shrinkage_compensation_check.isChecked(),
             # File management settings
             'remove_temp_files': self._remove_temp_files_check.isChecked(),
             'temp_file_path': self._temp_file_path_edit.text(),
