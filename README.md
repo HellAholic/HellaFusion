@@ -4,6 +4,9 @@
 
 HellaFusion revolutionizes your 3D printing workflow by enabling **dynamic quality switching** within a single print job. Print your models with different quality profiles at different heights, automatically combined into one seamless gcode file.
 
+## Disclaimer
+This plugin is provided "as is" without any warranty, express or implied. The user assumes all responsibility and risk for the use of this plugin. The authors and contributors are not liable for any damages, whether direct, indirect, consequential, or incidental, arising from the use or inability to use this plugin. This includes, but is not limited to, damage to equipment, loss of data, or any other losses. By using this plugin, you agree to these terms.
+
 ## ✨ Why HellaFusion?
 
 Transform your 3D printing strategy with intelligent quality fusion:
