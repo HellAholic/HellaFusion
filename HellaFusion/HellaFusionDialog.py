@@ -429,7 +429,31 @@ class HellaFusionDialog(QDialog):
         self._hide_calculate_button_check.setToolTip("Hide the Calculate Transitions button (auto-calculation will still occur)")
         self._hide_calculate_button_check.stateChanged.connect(self._onHideCalculateButtonChanged)
         ui_behavior_layout.addWidget(self._hide_calculate_button_check)
-        
+
+        # Default transition step size
+        transition_step_layout = QHBoxLayout()
+        transition_step_label = QLabel("Default transition step:")
+        transition_step_label.setStyleSheet(PluginConstants.LABEL_STYLE)
+        transition_step_label.setFixedWidth(180)
+        self._transition_step_spin = QDoubleSpinBox()
+        self._transition_step_spin.setMinimum(0.1)
+        self._transition_step_spin.setMaximum(1000.0)
+        self._transition_step_spin.setDecimals(1)
+        self._transition_step_spin.setSingleStep(1.0)
+        self._transition_step_spin.setValue(PluginConstants.DEFAULT_TRANSITION_STEP)
+        self._transition_step_spin.setSuffix(" mm")
+        self._transition_step_spin.setStyleSheet(PluginConstants.SPIN_BOX_STYLE)
+        self._transition_step_spin.setToolTip(
+            "Default step size used when suggesting heights for new transitions.\n"
+            "The Nth new transition will default to N × this value."
+        )
+        self._transition_step_spin.valueChanged.connect(self._saveSettings)
+        transition_step_layout.addWidget(transition_step_label)
+        transition_step_layout.addSpacing(30)
+        transition_step_layout.addWidget(self._transition_step_spin)
+        transition_step_layout.addStretch()
+        ui_behavior_layout.addLayout(transition_step_layout)
+
         ui_behavior_group.setLayout(ui_behavior_layout)
         settings_tab_layout.addWidget(ui_behavior_group)
         
@@ -653,12 +677,12 @@ class HellaFusionDialog(QDialog):
         transition_label = QLabel(f"↓ Transition at Z:")
         transition_label.setStyleSheet(PluginConstants.LABEL_STYLE_TRANSITION)
         transition_layout.addWidget(transition_label)
-        
+
         # Height input
         height_spin = QDoubleSpinBox()
         height_spin.setMinimum(0.1)
         height_spin.setMaximum(1000.0)
-        height_spin.setValue(10.0 * transition_number)
+        height_spin.setValue(self._transition_step_spin.value() * transition_number)
         height_spin.setDecimals(2)
         height_spin.setSuffix(" mm")
         height_spin.setStyleSheet(PluginConstants.SPIN_BOX_STYLE)
@@ -1345,6 +1369,7 @@ class HellaFusionDialog(QDialog):
         self._temp_file_prefix_edit.setEnabled(not is_processing)
         self._output_file_suffix_edit.setEnabled(not is_processing)
         self._hide_calculate_button_check.setEnabled(not is_processing)
+        self._transition_step_spin.setEnabled(not is_processing)
         self._default_pause_gcode_edit.setEnabled(not is_processing)
         self._restore_pause_default_btn.setEnabled(not is_processing)
         self._save_pause_default_btn.setEnabled(not is_processing)
@@ -1433,6 +1458,7 @@ class HellaFusionDialog(QDialog):
         self._temp_file_prefix_edit.blockSignals(True)
         self._output_file_suffix_edit.blockSignals(True)
         self._hide_calculate_button_check.blockSignals(True)
+        self._transition_step_spin.blockSignals(True)
         
         try:
             # Basic settings
@@ -1466,6 +1492,8 @@ class HellaFusionDialog(QDialog):
             if 'hide_calculate_button' in settings:
                 self._hide_calculate_button_check.setChecked(settings['hide_calculate_button'])
                 self._onHideCalculateButtonChanged(Qt.CheckState.Checked.value if settings['hide_calculate_button'] else Qt.CheckState.Unchecked.value)
+            if 'transition_step' in settings:
+                self._transition_step_spin.setValue(float(settings['transition_step']))
             
             # Default pause gcode
             if 'default_pause_gcode' in settings:
@@ -1518,6 +1546,7 @@ class HellaFusionDialog(QDialog):
             self._temp_file_prefix_edit.blockSignals(False)
             self._output_file_suffix_edit.blockSignals(False)
             self._hide_calculate_button_check.blockSignals(False)
+            self._transition_step_spin.blockSignals(False)
         
         # Update model info on load
         self._updateModelInfo()
@@ -1565,6 +1594,7 @@ class HellaFusionDialog(QDialog):
             'output_file_suffix': self._output_file_suffix_edit.text(),
             # UI behavior settings
             'hide_calculate_button': self._hide_calculate_button_check.isChecked(),
+            'transition_step': self._transition_step_spin.value(),
             # Pause settings
             'pause_settings': pause_settings,
             'default_pause_gcode': self._default_pause_gcode_edit.toPlainText(),
@@ -2033,6 +2063,7 @@ class HellaFusionDialog(QDialog):
             self._temp_file_prefix_edit.blockSignals(True)
             self._output_file_suffix_edit.blockSignals(True)
             self._hide_calculate_button_check.blockSignals(True)
+            self._transition_step_spin.blockSignals(True)
             
             try:
                 # Reset file management settings
@@ -2044,6 +2075,7 @@ class HellaFusionDialog(QDialog):
                 # Reset UI behavior settings
                 self._hide_calculate_button_check.setChecked(False)
                 self._calculate_transitions_btn.setVisible(True)
+                self._transition_step_spin.setValue(PluginConstants.DEFAULT_TRANSITION_STEP)
                 
             finally:
                 # Re-enable signals
@@ -2052,6 +2084,7 @@ class HellaFusionDialog(QDialog):
                 self._temp_file_prefix_edit.blockSignals(False)
                 self._output_file_suffix_edit.blockSignals(False)
                 self._hide_calculate_button_check.blockSignals(False)
+                self._transition_step_spin.blockSignals(False)
             
             # Save the reset settings
             self._saveSettings()
