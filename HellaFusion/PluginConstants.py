@@ -38,6 +38,9 @@ class PluginConstants:
     COMBINING_PROGRESS_START = 90  # Start combining phase at 90% progress
     FINAL_PROGRESS = 100
     
+    # Transitions
+    DEFAULT_TRANSITION_STEP = 10.0  # mm - default step size for new transition height suggestions
+
     # File management
     TEMP_FILE_PREFIX = "hellafusion_temp_"
     OUTPUT_FILE_SUFFIX = "_hellafused"

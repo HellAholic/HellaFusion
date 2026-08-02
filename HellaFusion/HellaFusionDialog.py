@@ -321,6 +321,16 @@ class HellaFusionDialog(QDialog):
         self._update_profiles_btn.clicked.connect(self._updateQualityProfiles)
         self._update_profiles_btn.setToolTip("Refresh quality profiles from current Cura settings")
         transition_buttons_layout.addWidget(self._update_profiles_btn)
+
+        self._add_pause_to_all_btn = QPushButton("Add Pause to All")
+        self._add_pause_to_all_btn.setStyleSheet(PluginConstants.SECONDARY_BUTTON_STYLE)
+        self._add_pause_to_all_btn.setMinimumWidth(140)
+        self._add_pause_to_all_btn.setFixedHeight(36)
+        self._add_pause_to_all_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self._add_pause_to_all_btn.setToolTip("Set the 'Pause Here' checkbox to checked for all transitions")
+        self._add_pause_to_all_btn.clicked.connect(self._onAddPauseToAll)
+        self._add_pause_to_all_btn.setVisible(False)
+        transition_buttons_layout.addWidget(self._add_pause_to_all_btn)
         
         transition_buttons_layout.addStretch()
         transitions_tab_layout.addLayout(transition_buttons_layout)
@@ -429,7 +439,31 @@ class HellaFusionDialog(QDialog):
         self._hide_calculate_button_check.setToolTip("Hide the Calculate Transitions button (auto-calculation will still occur)")
         self._hide_calculate_button_check.stateChanged.connect(self._onHideCalculateButtonChanged)
         ui_behavior_layout.addWidget(self._hide_calculate_button_check)
-        
+
+        # Default transition step size
+        transition_step_layout = QHBoxLayout()
+        transition_step_label = QLabel("Default transition step:")
+        transition_step_label.setStyleSheet(PluginConstants.LABEL_STYLE)
+        transition_step_label.setFixedWidth(180)
+        self._transition_step_spin = QDoubleSpinBox()
+        self._transition_step_spin.setMinimum(0.1)
+        self._transition_step_spin.setMaximum(1000.0)
+        self._transition_step_spin.setDecimals(1)
+        self._transition_step_spin.setSingleStep(1.0)
+        self._transition_step_spin.setValue(PluginConstants.DEFAULT_TRANSITION_STEP)
+        self._transition_step_spin.setSuffix(" mm")
+        self._transition_step_spin.setStyleSheet(PluginConstants.SPIN_BOX_STYLE)
+        self._transition_step_spin.setToolTip(
+            "Default step size used when suggesting heights for new transitions.\n"
+            "The Nth new transition will default to N × this value."
+        )
+        self._transition_step_spin.valueChanged.connect(self._saveSettings)
+        transition_step_layout.addWidget(transition_step_label)
+        transition_step_layout.addSpacing(30)
+        transition_step_layout.addWidget(self._transition_step_spin)
+        transition_step_layout.addStretch()
+        ui_behavior_layout.addLayout(transition_step_layout)
+
         ui_behavior_group.setLayout(ui_behavior_layout)
         settings_tab_layout.addWidget(ui_behavior_group)
         
@@ -653,12 +687,12 @@ class HellaFusionDialog(QDialog):
         transition_label = QLabel(f"↓ Transition at Z:")
         transition_label.setStyleSheet(PluginConstants.LABEL_STYLE_TRANSITION)
         transition_layout.addWidget(transition_label)
-        
+
         # Height input
         height_spin = QDoubleSpinBox()
         height_spin.setMinimum(0.1)
         height_spin.setMaximum(1000.0)
-        height_spin.setValue(10.0 * transition_number)
+        height_spin.setValue(self._transition_step_spin.value() * transition_number)
         height_spin.setDecimals(2)
         height_spin.setSuffix(" mm")
         height_spin.setStyleSheet(PluginConstants.SPIN_BOX_STYLE)
@@ -1345,6 +1379,7 @@ class HellaFusionDialog(QDialog):
         self._temp_file_prefix_edit.setEnabled(not is_processing)
         self._output_file_suffix_edit.setEnabled(not is_processing)
         self._hide_calculate_button_check.setEnabled(not is_processing)
+        self._transition_step_spin.setEnabled(not is_processing)
         self._default_pause_gcode_edit.setEnabled(not is_processing)
         self._restore_pause_default_btn.setEnabled(not is_processing)
         self._save_pause_default_btn.setEnabled(not is_processing)
@@ -1433,6 +1468,7 @@ class HellaFusionDialog(QDialog):
         self._temp_file_prefix_edit.blockSignals(True)
         self._output_file_suffix_edit.blockSignals(True)
         self._hide_calculate_button_check.blockSignals(True)
+        self._transition_step_spin.blockSignals(True)
         
         try:
             # Basic settings
@@ -1466,6 +1502,8 @@ class HellaFusionDialog(QDialog):
             if 'hide_calculate_button' in settings:
                 self._hide_calculate_button_check.setChecked(settings['hide_calculate_button'])
                 self._onHideCalculateButtonChanged(Qt.CheckState.Checked.value if settings['hide_calculate_button'] else Qt.CheckState.Unchecked.value)
+            if 'transition_step' in settings:
+                self._transition_step_spin.setValue(float(settings['transition_step']))
             
             # Default pause gcode
             if 'default_pause_gcode' in settings:
@@ -1518,6 +1556,7 @@ class HellaFusionDialog(QDialog):
             self._temp_file_prefix_edit.blockSignals(False)
             self._output_file_suffix_edit.blockSignals(False)
             self._hide_calculate_button_check.blockSignals(False)
+            self._transition_step_spin.blockSignals(False)
         
         # Update model info on load
         self._updateModelInfo()
@@ -1565,6 +1604,7 @@ class HellaFusionDialog(QDialog):
             'output_file_suffix': self._output_file_suffix_edit.text(),
             # UI behavior settings
             'hide_calculate_button': self._hide_calculate_button_check.isChecked(),
+            'transition_step': self._transition_step_spin.value(),
             # Pause settings
             'pause_settings': pause_settings,
             'default_pause_gcode': self._default_pause_gcode_edit.toPlainText(),
@@ -1855,6 +1895,9 @@ class HellaFusionDialog(QDialog):
         """Handle expert settings checkbox toggle - show/hide nozzle height fields and pause controls."""
         show_expert = (state == Qt.CheckState.Checked.value)
         
+        # Show/hide 'Add Pause to All' button
+        self._add_pause_to_all_btn.setVisible(show_expert)
+        
         # Show/hide nozzle height fields for all section rows (not transitions)
         for row in self._transition_rows:
             if not row['is_transition']:  # Sections only
@@ -1865,12 +1908,19 @@ class HellaFusionDialog(QDialog):
             else:  # Transitions - show/hide pause checkbox
                 if 'pause_checkbox' in row and row['pause_checkbox']:
                     row['pause_checkbox'].setVisible(show_expert)
-                    # If hiding and pause is checked, also hide the settings button
+                    # If hiding, uncheck pause and hide the settings button
                     if not show_expert:
+                        row['pause_checkbox'].setChecked(False)
                         row['pause_settings_btn'].setVisible(False)
         
         # Save the expert settings state
         self._saveSettings()
+
+    def _onAddPauseToAll(self):
+        """Set the Pause Here checkbox to checked for all transitions."""
+        for row in self._transition_rows:
+            if row['is_transition'] and 'pause_checkbox' in row and row['pause_checkbox']:
+                row['pause_checkbox'].setChecked(True)
     
     def _connectInvalidationHandlers(self):
         """Connect existing UI elements to invalidation handlers."""
@@ -2033,6 +2083,7 @@ class HellaFusionDialog(QDialog):
             self._temp_file_prefix_edit.blockSignals(True)
             self._output_file_suffix_edit.blockSignals(True)
             self._hide_calculate_button_check.blockSignals(True)
+            self._transition_step_spin.blockSignals(True)
             
             try:
                 # Reset file management settings
@@ -2044,6 +2095,7 @@ class HellaFusionDialog(QDialog):
                 # Reset UI behavior settings
                 self._hide_calculate_button_check.setChecked(False)
                 self._calculate_transitions_btn.setVisible(True)
+                self._transition_step_spin.setValue(PluginConstants.DEFAULT_TRANSITION_STEP)
                 
             finally:
                 # Re-enable signals
@@ -2052,6 +2104,7 @@ class HellaFusionDialog(QDialog):
                 self._temp_file_prefix_edit.blockSignals(False)
                 self._output_file_suffix_edit.blockSignals(False)
                 self._hide_calculate_button_check.blockSignals(False)
+                self._transition_step_spin.blockSignals(False)
             
             # Save the reset settings
             self._saveSettings()
