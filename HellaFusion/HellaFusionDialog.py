@@ -321,6 +321,16 @@ class HellaFusionDialog(QDialog):
         self._update_profiles_btn.clicked.connect(self._updateQualityProfiles)
         self._update_profiles_btn.setToolTip("Refresh quality profiles from current Cura settings")
         transition_buttons_layout.addWidget(self._update_profiles_btn)
+
+        self._add_pause_to_all_btn = QPushButton("Add Pause to All")
+        self._add_pause_to_all_btn.setStyleSheet(PluginConstants.SECONDARY_BUTTON_STYLE)
+        self._add_pause_to_all_btn.setMinimumWidth(140)
+        self._add_pause_to_all_btn.setFixedHeight(36)
+        self._add_pause_to_all_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self._add_pause_to_all_btn.setToolTip("Set the 'Pause Here' checkbox to checked for all transitions")
+        self._add_pause_to_all_btn.clicked.connect(self._onAddPauseToAll)
+        self._add_pause_to_all_btn.setVisible(False)
+        transition_buttons_layout.addWidget(self._add_pause_to_all_btn)
         
         transition_buttons_layout.addStretch()
         transitions_tab_layout.addLayout(transition_buttons_layout)
@@ -1885,6 +1895,9 @@ class HellaFusionDialog(QDialog):
         """Handle expert settings checkbox toggle - show/hide nozzle height fields and pause controls."""
         show_expert = (state == Qt.CheckState.Checked.value)
         
+        # Show/hide 'Add Pause to All' button
+        self._add_pause_to_all_btn.setVisible(show_expert)
+        
         # Show/hide nozzle height fields for all section rows (not transitions)
         for row in self._transition_rows:
             if not row['is_transition']:  # Sections only
@@ -1895,12 +1908,19 @@ class HellaFusionDialog(QDialog):
             else:  # Transitions - show/hide pause checkbox
                 if 'pause_checkbox' in row and row['pause_checkbox']:
                     row['pause_checkbox'].setVisible(show_expert)
-                    # If hiding and pause is checked, also hide the settings button
+                    # If hiding, uncheck pause and hide the settings button
                     if not show_expert:
+                        row['pause_checkbox'].setChecked(False)
                         row['pause_settings_btn'].setVisible(False)
         
         # Save the expert settings state
         self._saveSettings()
+
+    def _onAddPauseToAll(self):
+        """Set the Pause Here checkbox to checked for all transitions."""
+        for row in self._transition_rows:
+            if row['is_transition'] and 'pause_checkbox' in row and row['pause_checkbox']:
+                row['pause_checkbox'].setChecked(True)
     
     def _connectInvalidationHandlers(self):
         """Connect existing UI elements to invalidation handlers."""
